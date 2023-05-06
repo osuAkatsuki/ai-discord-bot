@@ -127,9 +127,15 @@ async def on_message(message: discord.Message):
         and message.author.id != bot.user.id  # not our bot
         and await threads.fetch_one(message.channel.id)  # is a thread we're tracking
     ):
+        prompt = message.content
+        if prompt.startswith(f"{bot.user.mention} "):
+            prompt = prompt.removeprefix(f"{bot.user.mention} ")
+
+        prompt = f"{message.author.display_name}: {prompt}"
+
         await thread_messages.create(
             message.channel.id,
-            message.content,
+            prompt,
             role="user",
             tokens_used=0,
         )
@@ -139,13 +145,6 @@ async def on_message(message: discord.Message):
             thread_history = await thread_messages.fetch_many(
                 thread_id=message.channel.id
             )
-
-            prompt = message.content
-            if prompt.startswith(f"{bot.user.mention} "):
-                prompt = prompt.removeprefix(f"{bot.user.mention} ")
-
-            prompt = f"{message.author.display_name}: {prompt}"
-
             message_history = [
                 {"role": m["role"], "content": m["content"]} for m in thread_history
             ]
