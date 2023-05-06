@@ -1,0 +1,52 @@
+version: "3.3"
+
+services:
+  ## shared/managed services
+
+  postgres:
+    image: postgres:13
+    environment:
+      # NOTE: running with the assumption that local dev will not have read replication
+      # (meaning that the read & write dbs will be the same)
+      POSTGRES_PASSWORD: ${WRITE_DB_PASS}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+
+  ## application services
+
+  ai-discord-bot:
+    image: ai-discord-bot:latest
+    environment:
+      - APP_ENV=${APP_ENV}
+      - APP_COMPONENT=${APP_COMPONENT}
+      - APP_ROOT_PATH=${APP_ROOT_PATH}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - READ_DB_SCHEME=${READ_DB_SCHEME}
+      - READ_DB_HOST=${READ_DB_HOST}
+      - READ_DB_PORT=${READ_DB_PORT}
+      - READ_DB_USER=${READ_DB_USER}
+      - READ_DB_PASS=${READ_DB_PASS}
+      - READ_DB_NAME=${READ_DB_NAME}
+      - READ_DB_USE_SSL=${READ_DB_USE_SSL}
+      - READ_DB_CA_CERTIFICATE=${READ_DB_CA_CERTIFICATE}
+      - INITIALLY_AVAILABLE_READ_DB=${INITIALLY_AVAILABLE_READ_DB}
+      - WRITE_DB_SCHEME=${WRITE_DB_SCHEME}
+      - WRITE_DB_HOST=${WRITE_DB_HOST}
+      - WRITE_DB_PORT=${WRITE_DB_PORT}
+      - WRITE_DB_USER=${WRITE_DB_USER}
+      - WRITE_DB_PASS=${WRITE_DB_PASS}
+      - WRITE_DB_NAME=${WRITE_DB_NAME}
+      - WRITE_DB_USE_SSL=${WRITE_DB_USE_SSL}
+      - WRITE_DB_CA_CERTIFICATE=${WRITE_DB_CA_CERTIFICATE}
+      - INITIALLY_AVAILABLE_WRITE_DB=${INITIALLY_AVAILABLE_WRITE_DB}
+      - DB_POOL_MIN_SIZE=${DB_POOL_MIN_SIZE}
+      - DB_POOL_MAX_SIZE=${DB_POOL_MAX_SIZE}
+      - SERVICE_READINESS_TIMEOUT=${SERVICE_READINESS_TIMEOUT}
+    volumes:
+      - .:/srv/root
+      - ./scripts:/scripts
+    depends_on:
+      - postgres

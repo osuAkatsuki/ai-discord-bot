@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+from typing import Any
+import os.path
+import sys
+
+import discord
+import openai
+from openai.openai_object import OpenAIObject
+
+# add .. to path
+srv_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.append(srv_root)
+
+from app import state
+from app.adapters import database
+from app.repositories import thread_messages, threads
+from app import settings
+
+
+# make parent class for lifecycle hooks :/
+# haven't been able to find anything reliable in discord.py for them
+class Bot(discord.Client):
+    async def start(self, *args, **kwargs) -> None:
+        await state.read_database.connect()
+        await state.write_database.connect()
+
+        await super().start(*args, **kwargs)
+
+    async def close(self, *args: Any, **kwargs: Any) -> None:
+        await state.read_database.disconnect()
+        await state.write_database.disconnect()
+
+        await super().close(*args, **kwargs)
+
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+
+def dsn(
+    scheme: str,
+    username: str,
+    password: str,
+    host: str,
+    port: int,
+    database: str,
+) -> str:
+    return f"{scheme}://{username}:{password}@{host}:{port}/{database}"
+
+
+state.read_database = database.Database(
+    dsn=dsn(
+        scheme="postgresql",
+        username=settings.READ_DB_USER,
+        password=settings.READ_DB_PASS,
+        host=settings.READ_DB_HOST,
+        port=settings.READ_DB_PORT,
+        database=settings.READ_DB_NAME,
+    ),
+    db_ssl=settings.READ_DB_USE_SSL,
+    min_pool_size=settings.DB_POOL_MIN_SIZE,
+    max_pool_size=settings.DB_POOL_MAX_SIZE,
+)
+state.write_database = database.Database(
+    dsn=dsn(
+        scheme="postgresql",
+        username=settings.WRITE_DB_USER,
+        password=settings.WRITE_DB_PASS,
+        host=settings.WRITE_DB_HOST,
+        port=settings.WRITE_DB_PORT,
+        database=settings.WRITE_DB_NAME,
+    ),
+    db_ssl=settings.WRITE_DB_USE_SSL,
+    min_pool_size=settings.DB_POOL_MIN_SIZE,
+    max_pool_size=settings.DB_POOL_MAX_SIZE,
+)
+
+bot = Bot(intents=intents)
+command_tree = discord.app_commands.CommandTree(bot)
+
+
+# whitelist users who are allowed to use the askai command
+class Users:
+    cmyui = 285190493703503872
+
+
+allowed_to_ask_ai = {Users.cmyui}
+
+
+# https://openai.com/pricing
+
+
+def model_pricing(model: str) -> float:
+    match model:
+        case "gpt-4-8k":
+            return 0.03
+        case "gpt-4-32k":
+            return 0.06
+        case "gpt-3.5-turbo":
+            return 0.02
+        case "davinci":
+            return 0.02
+        case _:
+            raise NotImplementedError(f"Unknown model: {model}")
+
+
+def tokens_to_cents(model: str, tokens: int) -> float:
+    dollars_per_1k_tokens = model_pricing(model)
+    return tokens * (dollars_per_1k_tokens / 1000)
+
+
+@bot.event
+async def on_ready():
+    # NOTE: we can't use this as a lifecycle hook because
+    # it may be called more than a single time.
+    # our lifecycle hook is in our Bot class definition
+
+    openai.api_key = settings.OPENAI_API_KEY
+    await command_tree.sync()
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    if (
+        isinstance(message.channel, discord.Thread)
+        and bot.user is not None  # we're logged in
+        and message.author.id != bot.user.id  # not our bot
+        # and bot.user.id in [m.id for m in message.mentions]  # mentioned us
+        and await threads.fetch_one(message.channel.id)  # is a thread we're tracking
+    ):
+        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
+
+        prompt = message.content
+        if prompt.startswith(f"{bot.user.mention} "):
+            prompt = prompt.removeprefix(f"{bot.user.mention} ")
+
+        prompt = f"{message.author.display_name}: {prompt}"
+
+        message_history = [
+            {"role": m["role"], "content": m["content"]} for m in thread_history
+        ]
+
+        gpt_response = await openai.ChatCompletion.acreate(
+            model="gpt-4",
+            messages=message_history + [{"role": "user", "content": prompt}],
+        )
+        assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+
+        gpt_response_content = gpt_response.choices[0].message.content
+        tokens_spent = gpt_response.usage.total_tokens
+
+        await thread_messages.create(
+            message.channel.id,
+            prompt,
+            role="user",
+            tokens_used=tokens_spent,
+        )
+        await thread_messages.create(
+            message.channel.id,
+            gpt_response_content,
+            role="assistant",
+            tokens_used=0,
+        )
+
+        await message.channel.send(gpt_response_content)
+
+
+@command_tree.command(name="cost")
+async def cost(interaction: discord.Interaction):
+    if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    thread = await threads.fetch_one(interaction.channel.id)
+    if thread is None:
+        return
+
+    messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
+    tokens_used = sum(m["tokens_used"] for m in messages)
+    cents_used = tokens_to_cents("gpt-4-8k", tokens_used)
+
+    await interaction.response.send_message(
+        f"This thread has used {cents_used:.5f}¢ ({tokens_used} tokens) over {len(messages)} messages",
+        ephemeral=True,
+    )
+
+
+@command_tree.command(name="askai")
+async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
+    if interaction.user.id not in allowed_to_ask_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    assert interaction.channel is not None
+    assert isinstance(interaction.channel, discord.TextChannel)
+
+    gpt_response = await openai.ChatCompletion.acreate(
+        model="gpt-4",
+        messages=[{"role": "user", "content": initial_prompt}],
+    )
+    assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+
+    # TODO: is this calculation right for gpt4?
+    tokens_used = gpt_response.usage.total_tokens
+    cents_spent = tokens_to_cents("gpt-4-8k", tokens_used)
+
+    thread_creation_message = await interaction.followup.send(
+        content=(
+            f"Created thread for {cents_spent:.5f}¢ ({tokens_used} tokens)\n"
+            "\n"
+            f"Your prompt: **{initial_prompt}**\n"
+        ),
+        ephemeral=True,
+        wait=True,
+    )
+
+    thread_creation_message.guild = interaction.guild  # needed for thread. weird.
+    thread = await thread_creation_message.create_thread(
+        name=f"AI Thread: {initial_prompt[:30] + ('...' if len(initial_prompt) > 30 else '')}",
+    )
+    await threads.create(thread.id, initiator_user_id=interaction.user.id)
+
+    gpt_response_content = gpt_response.choices[0].message.content
+
+    await thread.send(content=gpt_response_content)
+    await thread_messages.create(
+        thread.id,
+        content=initial_prompt,
+        role="user",
+        tokens_used=tokens_used,
+    )
+    await thread_messages.create(
+        thread.id,
+        content=gpt_response_content,
+        role="assistant",
+        tokens_used=0,
+    )
+
+
+if __name__ == "__main__":
+    bot.run(settings.DISCORD_TOKEN)

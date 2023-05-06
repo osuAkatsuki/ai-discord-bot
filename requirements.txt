@@ -1,0 +1,5 @@
+asyncpg
+databases
+discord.py
+openai
+python-dotenv
