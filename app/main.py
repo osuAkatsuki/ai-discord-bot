@@ -125,44 +125,46 @@ async def on_message(message: discord.Message):
         isinstance(message.channel, discord.Thread)
         and bot.user is not None  # we're logged in
         and message.author.id != bot.user.id  # not our bot
-        # and bot.user.id in [m.id for m in message.mentions]  # mentioned us
         and await threads.fetch_one(message.channel.id)  # is a thread we're tracking
     ):
-        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
-
-        prompt = message.content
-        if prompt.startswith(f"{bot.user.mention} "):
-            prompt = prompt.removeprefix(f"{bot.user.mention} ")
-
-        prompt = f"{message.author.display_name}: {prompt}"
-
-        message_history = [
-            {"role": m["role"], "content": m["content"]} for m in thread_history
-        ]
-
-        gpt_response = await openai.ChatCompletion.acreate(
-            model="gpt-4",
-            messages=message_history + [{"role": "user", "content": prompt}],
-        )
-        assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
-
-        gpt_response_content = gpt_response.choices[0].message.content
-        tokens_spent = gpt_response.usage.total_tokens
-
         await thread_messages.create(
             message.channel.id,
-            prompt,
+            message.content,
             role="user",
-            tokens_used=tokens_spent,
-        )
-        await thread_messages.create(
-            message.channel.id,
-            gpt_response_content,
-            role="assistant",
             tokens_used=0,
         )
 
-        await message.channel.send(gpt_response_content)
+        # if it started with a "! ", ask gpt for a response
+        if message.content.startswith("! "):
+            thread_history = await thread_messages.fetch_many(
+                thread_id=message.channel.id
+            )
+
+            prompt = message.content
+            if prompt.startswith(f"{bot.user.mention} "):
+                prompt = prompt.removeprefix(f"{bot.user.mention} ")
+
+            prompt = f"{message.author.display_name}: {prompt}"
+
+            message_history = [
+                {"role": m["role"], "content": m["content"]} for m in thread_history
+            ]
+            gpt_response = await openai.ChatCompletion.acreate(
+                model="gpt-4",
+                messages=message_history + [{"role": "user", "content": prompt}],
+            )
+            assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+
+            gpt_response_content = gpt_response.choices[0].message.content
+            tokens_spent = gpt_response.usage.total_tokens
+
+            await message.channel.send(gpt_response_content)
+            await thread_messages.create(
+                message.channel.id,
+                gpt_response_content,
+                role="assistant",
+                tokens_used=tokens_spent,
+            )
 
 
 @command_tree.command(name="cost")
@@ -231,13 +233,13 @@ async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
         thread.id,
         content=initial_prompt,
         role="user",
-        tokens_used=tokens_used,
+        tokens_used=0,
     )
     await thread_messages.create(
         thread.id,
         content=gpt_response_content,
         role="assistant",
-        tokens_used=0,
+        tokens_used=tokens_used,
     )
 
 
