@@ -21,7 +21,6 @@ services:
     environment:
       - APP_ENV=${APP_ENV}
       - APP_COMPONENT=${APP_COMPONENT}
-      - APP_ROOT_PATH=${APP_ROOT_PATH}
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - READ_DB_SCHEME=${READ_DB_SCHEME}

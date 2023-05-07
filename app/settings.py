@@ -12,7 +12,6 @@ load_dotenv()
 
 APP_ENV = os.environ["APP_ENV"]
 APP_COMPONENT = os.environ["APP_COMPONENT"]
-APP_ROOT_PATH = os.environ["APP_ROOT_PATH"]
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
