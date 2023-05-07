@@ -88,17 +88,23 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    if not isinstance(message.channel, discord.Thread):
-        return
+    # we only care about messages when
 
+    # we are logged in
     if bot.user is None:
         return
 
+    # they are in threads
+    if not isinstance(message.channel, discord.Thread):
+        return
+
+    # they are not from us (the bot)
     if message.author.id == bot.user.id:
         return
 
-    thread = await threads.fetch_one(message.channel.id)
-    if thread is None:
+    # they are in a thread that was created with /askai
+    tracked_thread = await threads.fetch_one(message.channel.id)
+    if tracked_thread is None:
         return
 
     prompt = message.content
