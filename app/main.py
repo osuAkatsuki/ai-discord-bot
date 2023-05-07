@@ -4,6 +4,7 @@ import os.path
 import sys
 
 import discord
+from typing import Literal
 import openai
 from openai.openai_object import OpenAIObject
 
@@ -145,14 +146,16 @@ async def on_message(message: discord.Message):
         message_history.append({"role": "user", "content": prompt})
 
         gpt_response = await openai.ChatCompletion.acreate(
-            model="gpt-4",
+            model=tracked_thread["model"],
             messages=message_history,
         )
         assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
 
         gpt_response_content = gpt_response.choices[0].message.content
         tokens_spent = gpt_response.usage.total_tokens
-        dollars_spent = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_spent)
+        dollars_spent = openai_pricing.tokens_to_dollars(
+            tracked_thread["model"], tokens_spent
+        )
 
         formatted_response = (
             gpt_response_content
@@ -179,7 +182,7 @@ async def cost(interaction: discord.Interaction):
 
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
     tokens_used = sum(m["tokens_used"] for m in messages)
-    response_cost = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_used)
+    response_cost = openai_pricing.tokens_to_dollars(thread["model"], tokens_used)
 
     await interaction.response.send_message(
         f"This thread has used ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
@@ -188,7 +191,11 @@ async def cost(interaction: discord.Interaction):
 
 
 @command_tree.command(name="askai")
-async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
+async def ask_ai(
+    interaction: discord.Interaction,
+    initial_prompt: str,
+    model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
+):
     if interaction.user.id not in allowed_to_ask_ai:
         await interaction.response.send_message(
             "You are not allowed to use this command",
@@ -202,13 +209,13 @@ async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
     assert isinstance(interaction.channel, discord.TextChannel)
 
     gpt_response = await openai.ChatCompletion.acreate(
-        model="gpt-4",
+        model=model,
         messages=[{"role": "user", "content": initial_prompt}],
     )
     assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
 
     tokens_used = gpt_response.usage.total_tokens
-    response_cost = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_used)
+    response_cost = openai_pricing.tokens_to_dollars(model, tokens_used)
 
     thread_creation_message = await interaction.followup.send(
         content=(
@@ -224,7 +231,11 @@ async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
     thread = await thread_creation_message.create_thread(
         name=f"AI Thread: {initial_prompt[:30] + ('...' if len(initial_prompt) > 30 else '')}",
     )
-    await threads.create(thread.id, initiator_user_id=interaction.user.id)
+    await threads.create(
+        thread.id,
+        initiator_user_id=interaction.user.id,
+        model=model,
+    )
 
     gpt_response_content = gpt_response.choices[0].message.content
 
