@@ -11,7 +11,7 @@ from openai.openai_object import OpenAIObject
 srv_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.append(srv_root)
 
-from app import state
+from app import openai_pricing, state
 from app.adapters import database
 from app.repositories import thread_messages, threads
 from app import settings
@@ -21,7 +21,34 @@ from app import settings
 # haven't been able to find anything reliable in discord.py for them
 class Bot(discord.Client):
     async def start(self, *args, **kwargs) -> None:
+        state.read_database = database.Database(
+            database.dsn(
+                scheme="postgresql",
+                user=settings.READ_DB_USER,
+                password=settings.READ_DB_PASS,
+                host=settings.READ_DB_HOST,
+                port=settings.READ_DB_PORT,
+                database=settings.READ_DB_NAME,
+            ),
+            db_ssl=settings.READ_DB_USE_SSL,
+            min_pool_size=settings.DB_POOL_MIN_SIZE,
+            max_pool_size=settings.DB_POOL_MAX_SIZE,
+        )
         await state.read_database.connect()
+
+        state.write_database = database.Database(
+            database.dsn(
+                scheme="postgresql",
+                user=settings.WRITE_DB_USER,
+                password=settings.WRITE_DB_PASS,
+                host=settings.WRITE_DB_HOST,
+                port=settings.WRITE_DB_PORT,
+                database=settings.WRITE_DB_NAME,
+            ),
+            db_ssl=settings.WRITE_DB_USE_SSL,
+            min_pool_size=settings.DB_POOL_MIN_SIZE,
+            max_pool_size=settings.DB_POOL_MAX_SIZE,
+        )
         await state.write_database.connect()
 
         await super().start(*args, **kwargs)
@@ -37,44 +64,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 
-def dsn(
-    scheme: str,
-    username: str,
-    password: str,
-    host: str,
-    port: int,
-    database: str,
-) -> str:
-    return f"{scheme}://{username}:{password}@{host}:{port}/{database}"
-
-
-state.read_database = database.Database(
-    dsn=dsn(
-        scheme="postgresql",
-        username=settings.READ_DB_USER,
-        password=settings.READ_DB_PASS,
-        host=settings.READ_DB_HOST,
-        port=settings.READ_DB_PORT,
-        database=settings.READ_DB_NAME,
-    ),
-    db_ssl=settings.READ_DB_USE_SSL,
-    min_pool_size=settings.DB_POOL_MIN_SIZE,
-    max_pool_size=settings.DB_POOL_MAX_SIZE,
-)
-state.write_database = database.Database(
-    dsn=dsn(
-        scheme="postgresql",
-        username=settings.WRITE_DB_USER,
-        password=settings.WRITE_DB_PASS,
-        host=settings.WRITE_DB_HOST,
-        port=settings.WRITE_DB_PORT,
-        database=settings.WRITE_DB_NAME,
-    ),
-    db_ssl=settings.WRITE_DB_USE_SSL,
-    min_pool_size=settings.DB_POOL_MIN_SIZE,
-    max_pool_size=settings.DB_POOL_MAX_SIZE,
-)
-
 bot = Bot(intents=intents)
 command_tree = discord.app_commands.CommandTree(bot)
 
@@ -85,28 +74,6 @@ class Users:
 
 
 allowed_to_ask_ai = {Users.cmyui}
-
-
-# https://openai.com/pricing
-
-
-def model_pricing(model: str) -> float:
-    match model:
-        case "gpt-4-8k":
-            return 0.03
-        case "gpt-4-32k":
-            return 0.06
-        case "gpt-3.5-turbo":
-            return 0.02
-        case "davinci":
-            return 0.02
-        case _:
-            raise NotImplementedError(f"Unknown model: {model}")
-
-
-def tokens_to_dollars(model: str, tokens: int) -> float:
-    dollars_per_1k_tokens = model_pricing(model)
-    return tokens * (dollars_per_1k_tokens / 1000)
 
 
 @bot.event
@@ -134,14 +101,14 @@ async def on_message(message: discord.Message):
         if prompt.startswith("! "):
             prompt = prompt.removeprefix("! ")
             send_to_gpt = True
-            include_context = 10  # 10 messages
+            messages_of_context = 20
         elif prompt.startswith("!! "):
             prompt = prompt.removeprefix("!! ")
             send_to_gpt = True
-            include_context = 50  # 50 messages
+            messages_of_context = 50
         else:
             send_to_gpt = False
-            include_context = 0
+            messages_of_context = 0
 
         prompt = f"{message.author.display_name}: {prompt}"
 
@@ -152,17 +119,17 @@ async def on_message(message: discord.Message):
             tokens_used=0,
         )
 
-        # if it started with a "! ", ask gpt for a response
+        # if it started with a "! " or "!! ", ask gpt for a response
         if send_to_gpt:
             thread_history = await thread_messages.fetch_many(
                 thread_id=message.channel.id
             )
 
             message_history = []
-            if include_context:
+            if messages_of_context:
                 message_history.extend(
                     {"role": m["role"], "content": m["content"]}
-                    for m in thread_history[-include_context:]
+                    for m in thread_history[-messages_of_context:]
                 )
             message_history.append({"role": "user", "content": prompt})
 
@@ -174,7 +141,7 @@ async def on_message(message: discord.Message):
 
             gpt_response_content = gpt_response.choices[0].message.content
             tokens_spent = gpt_response.usage.total_tokens
-            dollars_spent = tokens_to_dollars("gpt-4-8k", tokens_spent)
+            dollars_spent = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_spent)
 
             formatted_response = (
                 gpt_response_content
@@ -201,7 +168,7 @@ async def cost(interaction: discord.Interaction):
 
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
     tokens_used = sum(m["tokens_used"] for m in messages)
-    response_cost = tokens_to_dollars("gpt-4-8k", tokens_used)
+    response_cost = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_used)
 
     await interaction.response.send_message(
         f"This thread has used ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
@@ -229,9 +196,8 @@ async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
     )
     assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
 
-    # TODO: is this calculation right for gpt4?
     tokens_used = gpt_response.usage.total_tokens
-    response_cost = tokens_to_dollars("gpt-4-8k", tokens_used)
+    response_cost = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_used)
 
     thread_creation_message = await interaction.followup.send(
         content=(
