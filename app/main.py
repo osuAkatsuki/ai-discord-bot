@@ -104,7 +104,7 @@ def model_pricing(model: str) -> float:
             raise NotImplementedError(f"Unknown model: {model}")
 
 
-def tokens_to_cents(model: str, tokens: int) -> float:
+def tokens_to_dollars(model: str, tokens: int) -> float:
     dollars_per_1k_tokens = model_pricing(model)
     return tokens * (dollars_per_1k_tokens / 1000)
 
@@ -131,6 +131,18 @@ async def on_message(message: discord.Message):
         if prompt.startswith(f"{bot.user.mention} "):
             prompt = prompt.removeprefix(f"{bot.user.mention} ")
 
+        if prompt.startswith("! "):
+            prompt = prompt.removeprefix("! ")
+            send_to_gpt = True
+            include_context = 10  # 10 messages
+        elif prompt.startswith("!! "):
+            prompt = prompt.removeprefix("!! ")
+            send_to_gpt = True
+            include_context = 50  # 50 messages
+        else:
+            send_to_gpt = False
+            include_context = 0
+
         prompt = f"{message.author.display_name}: {prompt}"
 
         await thread_messages.create(
@@ -141,23 +153,35 @@ async def on_message(message: discord.Message):
         )
 
         # if it started with a "! ", ask gpt for a response
-        if message.content.startswith("! "):
+        if send_to_gpt:
             thread_history = await thread_messages.fetch_many(
                 thread_id=message.channel.id
             )
-            message_history = [
-                {"role": m["role"], "content": m["content"]} for m in thread_history
-            ]
+
+            message_history = []
+            if include_context:
+                message_history.extend(
+                    {"role": m["role"], "content": m["content"]}
+                    for m in thread_history[-include_context:]
+                )
+            message_history.append({"role": "user", "content": prompt})
+
             gpt_response = await openai.ChatCompletion.acreate(
                 model="gpt-4",
-                messages=message_history + [{"role": "user", "content": prompt}],
+                messages=message_history,
             )
             assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
 
             gpt_response_content = gpt_response.choices[0].message.content
             tokens_spent = gpt_response.usage.total_tokens
+            dollars_spent = tokens_to_dollars("gpt-4-8k", tokens_spent)
 
-            await message.channel.send(gpt_response_content)
+            formatted_response = (
+                gpt_response_content
+                + "\n\n"
+                + f"> Response cost: ${dollars_spent:.5f} ({tokens_spent} tokens)"
+            )
+            await message.channel.send(formatted_response)
             await thread_messages.create(
                 message.channel.id,
                 gpt_response_content,
@@ -177,10 +201,10 @@ async def cost(interaction: discord.Interaction):
 
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
     tokens_used = sum(m["tokens_used"] for m in messages)
-    cents_used = tokens_to_cents("gpt-4-8k", tokens_used)
+    response_cost = tokens_to_dollars("gpt-4-8k", tokens_used)
 
     await interaction.response.send_message(
-        f"This thread has used {cents_used:.5f}¢ ({tokens_used} tokens) over {len(messages)} messages",
+        f"This thread has used ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
         ephemeral=True,
     )
 
@@ -207,11 +231,11 @@ async def ask_ai(interaction: discord.Interaction, initial_prompt: str):
 
     # TODO: is this calculation right for gpt4?
     tokens_used = gpt_response.usage.total_tokens
-    cents_spent = tokens_to_cents("gpt-4-8k", tokens_used)
+    response_cost = tokens_to_dollars("gpt-4-8k", tokens_used)
 
     thread_creation_message = await interaction.followup.send(
         content=(
-            f"Created thread for {cents_spent:.5f}¢ ({tokens_used} tokens)\n"
+            f"Created thread for ${response_cost:.5f} ({tokens_used} tokens)\n"
             "\n"
             f"Your prompt: **{initial_prompt}**\n"
         ),
