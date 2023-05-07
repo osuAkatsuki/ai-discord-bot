@@ -88,73 +88,78 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    if (
-        isinstance(message.channel, discord.Thread)
-        and bot.user is not None  # we're logged in
-        and message.author.id != bot.user.id  # not our bot
-        and await threads.fetch_one(message.channel.id)  # is a thread we're tracking
-    ):
-        prompt = message.content
-        if prompt.startswith(f"{bot.user.mention} "):
-            prompt = prompt.removeprefix(f"{bot.user.mention} ")
+    if not isinstance(message.channel, discord.Thread):
+        return
 
-        if prompt.startswith("! "):
-            prompt = prompt.removeprefix("! ")
-            send_to_gpt = True
-            messages_of_context = 20
-        elif prompt.startswith("!! "):
-            prompt = prompt.removeprefix("!! ")
-            send_to_gpt = True
-            messages_of_context = 50
-        else:
-            send_to_gpt = False
-            messages_of_context = 0
+    if bot.user is None:
+        return
 
-        prompt = f"{message.author.display_name}: {prompt}"
+    if message.author.id == bot.user.id:
+        return
 
+    thread = await threads.fetch_one(message.channel.id)
+    if thread is None:
+        return
+
+    prompt = message.content
+    if prompt.startswith(f"{bot.user.mention} "):
+        prompt = prompt.removeprefix(f"{bot.user.mention} ")
+
+    if prompt.startswith("! "):
+        prompt = prompt.removeprefix("! ")
+        send_to_gpt = True
+        messages_of_context = 20
+    elif prompt.startswith("!! "):
+        prompt = prompt.removeprefix("!! ")
+        send_to_gpt = True
+        messages_of_context = 50
+    else:
+        send_to_gpt = False
+        messages_of_context = 0
+
+    prompt = f"{message.author.display_name}: {prompt}"
+
+    await thread_messages.create(
+        message.channel.id,
+        prompt,
+        role="user",
+        tokens_used=0,
+    )
+
+    # if it started with a "! " or "!! ", ask gpt for a response
+    if send_to_gpt:
+        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
+
+        message_history = []
+        if messages_of_context:
+            message_history.extend(
+                {"role": m["role"], "content": m["content"]}
+                for m in thread_history[-messages_of_context:]
+            )
+        message_history.append({"role": "user", "content": prompt})
+
+        gpt_response = await openai.ChatCompletion.acreate(
+            model="gpt-4",
+            messages=message_history,
+        )
+        assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+
+        gpt_response_content = gpt_response.choices[0].message.content
+        tokens_spent = gpt_response.usage.total_tokens
+        dollars_spent = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_spent)
+
+        formatted_response = (
+            gpt_response_content
+            + "\n\n"
+            + f"> Response cost: ${dollars_spent:.5f} ({tokens_spent} tokens)"
+        )
+        await message.channel.send(formatted_response)
         await thread_messages.create(
             message.channel.id,
-            prompt,
-            role="user",
-            tokens_used=0,
+            gpt_response_content,
+            role="assistant",
+            tokens_used=tokens_spent,
         )
-
-        # if it started with a "! " or "!! ", ask gpt for a response
-        if send_to_gpt:
-            thread_history = await thread_messages.fetch_many(
-                thread_id=message.channel.id
-            )
-
-            message_history = []
-            if messages_of_context:
-                message_history.extend(
-                    {"role": m["role"], "content": m["content"]}
-                    for m in thread_history[-messages_of_context:]
-                )
-            message_history.append({"role": "user", "content": prompt})
-
-            gpt_response = await openai.ChatCompletion.acreate(
-                model="gpt-4",
-                messages=message_history,
-            )
-            assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
-
-            gpt_response_content = gpt_response.choices[0].message.content
-            tokens_spent = gpt_response.usage.total_tokens
-            dollars_spent = openai_pricing.tokens_to_dollars("gpt-4-8k", tokens_spent)
-
-            formatted_response = (
-                gpt_response_content
-                + "\n\n"
-                + f"> Response cost: ${dollars_spent:.5f} ({tokens_spent} tokens)"
-            )
-            await message.channel.send(formatted_response)
-            await thread_messages.create(
-                message.channel.id,
-                gpt_response_content,
-                role="assistant",
-                tokens_used=tokens_spent,
-            )
 
 
 @command_tree.command(name="cost")
