@@ -1,10 +1,12 @@
 def price_for_model(model: str) -> float:
     # https://openai.com/pricing
     match model:
-        case "gpt-4-8k":
+        case "gpt-4":
             return 0.03
-        case "gpt-4-32k":
-            return 0.06
+        # case "gpt-4-8k":
+        #     return 0.03
+        # case "gpt-4-32k":
+        #     return 0.06
         case "gpt-3.5-turbo":
             return 0.02
         case "davinci":
