@@ -87,6 +87,19 @@ async def on_ready():
     await command_tree.sync()
 
 
+def split_message(message: str, max_length: int) -> list[str]:
+    if len(message) <= max_length:
+        return [message]
+    else:
+        # split on last space before max_length
+        split_index = message.rfind(" ", 0, max_length)
+        if split_index == -1:
+            split_index = max_length
+        return [message[:split_index]] + split_message(
+            message[split_index:], max_length
+        )
+
+
 @bot.event
 async def on_message(message: discord.Message):
     # we only care about messages when
@@ -157,12 +170,9 @@ async def on_message(message: discord.Message):
             tracked_thread["model"], tokens_spent
         )
 
-        formatted_response = (
-            gpt_response_content
-            + "\n\n"
-            + f"> Response cost: ${dollars_spent:.5f} ({tokens_spent} tokens)"
-        )
-        await message.channel.send(formatted_response)
+        for chunk in split_message(gpt_response_content, 2000):
+            await message.channel.send(chunk)
+
         await thread_messages.create(
             message.channel.id,
             gpt_response_content,
