@@ -249,7 +249,9 @@ async def ask_ai(
 
     gpt_response_content = gpt_response.choices[0].message.content
 
-    await thread.send(content=gpt_response_content)
+    for chunk in split_message(gpt_response_content, 2000):
+        await thread.send(chunk)
+
     await thread_messages.create(
         thread.id,
         content=initial_prompt,
