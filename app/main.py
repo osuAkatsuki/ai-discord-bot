@@ -4,7 +4,7 @@ import sys
 from typing import Any
 from typing import Literal
 
-import discord
+import discord.abc
 import openai
 from openai.openai_object import OpenAIObject
 
@@ -261,7 +261,7 @@ async def summarize(
     start_message: str | None = None,
     end_message: str | None = None,
 ):
-    if not isinstance(interaction.channel, discord.Thread | discord.TextChannel):
+    if not isinstance(interaction.channel, discord.abc.Messageable):
         return
 
     await interaction.response.defer()
