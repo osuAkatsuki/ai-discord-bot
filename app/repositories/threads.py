@@ -18,6 +18,7 @@ class Thread(TypedDict):
     thread_id: int
     initiator_user_id: int
     model: str
+    context_length: int
     created_at: datetime
 
 

@@ -17,6 +17,8 @@ from app.adapters import database
 from app.repositories import thread_messages, threads
 from app import settings
 
+MAX_CONTENT_LENGTH = 100
+
 
 # make parent class for lifecycle hooks :/
 # haven't been able to find anything reliable in discord.py for them
@@ -146,7 +148,7 @@ async def on_message(message: discord.Message):
         {"role": m["role"], "content": m["content"]}
         # keep 10 messages before the prompt
         # TODO: allow some users to configure this per-thread
-        for m in thread_history[-10:]
+        for m in thread_history[-tracked_thread["context_length"] :]
     ]
     message_history.append({"role": "user", "content": prompt})
 
@@ -221,6 +223,12 @@ async def context(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
+    if context_length > MAX_CONTENT_LENGTH:
+        await interaction.response.send_message(
+            f"Context length cannot be greater than {MAX_CONTENT_LENGTH}",
+        )
+        return
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
         return
@@ -244,28 +252,28 @@ async def context(
 async def summarize(
     interaction: discord.Interaction,
     # support num of messages OR a starting location (message id)
-    num_messages: int | None = None,
-    starting_location: str | None = None,  # discord won't accept int here. too long?
+    num_messages: int = MAX_CONTENT_LENGTH,
+    # discord calls message ids "invalid integers". maybe <=i32 or something?
+    start_message: str | None = None,
+    end_message: str | None = None,
 ):
     if not isinstance(interaction.channel, discord.Thread | discord.TextChannel):
         return
 
     await interaction.response.defer()
 
-    MAX_MESSAGES = 100
+    limit = max(num_messages, MAX_CONTENT_LENGTH)
 
-    if num_messages is not None:
-        limit = min(num_messages, MAX_MESSAGES)
-        start_message_id = None
-    elif starting_location is not None:
-        limit = MAX_MESSAGES
-        start_message_id = int(starting_location)
+    start_message_id = None
+    if start_message is not None:
+        start_message_id = int(start_message)
+
+    end_message_id = None
+    if end_message is not None:
+        end_message_id = int(end_message)
+        tracking = False
     else:
-        await interaction.followup.send(
-            "Please provide either a number of messages to summarize or a message ID to start from",
-            ephemeral=True,
-        )
-        return
+        tracking = True
 
     messages = []
 
@@ -276,12 +284,20 @@ async def summarize(
 
         author = message.author.display_name
 
-        messages.append({"role": "user", "content": f"{author}: {content}"})
+        if tracking:
+            messages.append({"role": "user", "content": f"{author}: {content}"})
+        elif end_message_id is not None:
+            if message.id == end_message_id:
+                tracking = True
 
         if start_message_id is not None and message.id == start_message_id:
             break
 
     messages = messages[::-1]  # reverse it
+    import pprint
+
+    pprint.pp(messages)
+    return
 
     messages.append(
         {
