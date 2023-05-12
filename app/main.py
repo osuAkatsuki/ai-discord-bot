@@ -331,6 +331,16 @@ async def ai(
         )
         return
 
+    if (
+        interaction.channel is not None
+        and interaction.channel.type == discord.ChannelType.private
+    ):
+        await interaction.response.send_message(
+            "This command cannot be used in private messages",
+            ephemeral=True,
+        )
+        return
+
     await interaction.response.defer()
 
     assert interaction.channel is not None
