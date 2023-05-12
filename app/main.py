@@ -127,7 +127,7 @@ async def on_message(message: discord.Message):
     if tracked_thread is None:
         return
 
-    prompt = message.content
+    prompt = message.clean_content
     if prompt.startswith(f"{bot.user.mention} "):
         prompt = prompt.removeprefix(f"{bot.user.mention} ")
 
@@ -238,6 +238,69 @@ async def context(
             )
         )
     )
+
+
+@command_tree.command(name="summarize")
+async def summarize(
+    interaction: discord.Interaction,
+    # support num of messages OR a starting location (message id)
+    num_messages: int | None = None,
+    starting_location: str | None = None,  # discord won't accept int here. too long?
+):
+    if not isinstance(interaction.channel, discord.Thread | discord.TextChannel):
+        return
+
+    await interaction.response.defer()
+
+    MAX_MESSAGES = 100
+
+    if num_messages is not None:
+        limit = min(num_messages, MAX_MESSAGES)
+        start_message_id = None
+    elif starting_location is not None:
+        limit = MAX_MESSAGES
+        start_message_id = int(starting_location)
+    else:
+        await interaction.followup.send(
+            "Please provide either a number of messages to summarize or a message ID to start from",
+            ephemeral=True,
+        )
+        return
+
+    messages = []
+
+    async for message in interaction.channel.history(limit=limit):
+        content = message.clean_content
+        if not content:  # ignore empty messages (e.g. only images)
+            continue
+
+        author = message.author.display_name
+
+        messages.append({"role": "user", "content": f"{author}: {content}"})
+
+        if start_message_id is not None and message.id == start_message_id:
+            break
+
+    messages = messages[::-1]  # reverse it
+
+    messages.append(
+        {
+            "role": "user",
+            "content": "Could you summarize the above conversation?",
+        }
+    )
+
+    gpt_response = await openai.ChatCompletion.acreate(
+        model="gpt-4",
+        messages=messages,
+    )
+    assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+
+    gpt_response_content = gpt_response.choices[0].message.content
+    # tokens_spent = gpt_response.usage.total_tokens
+
+    for chunk in split_message(gpt_response_content, 2000):
+        await interaction.followup.send(chunk)
 
 
 @command_tree.command(name="ai")
