@@ -76,12 +76,16 @@ class Users:
     cmyui = 285190493703503872
     rapha = 153954447247147018
     fkzoink = 332722012877357066
+    flame = 347459855449325570
+    mistral = 249596453457100801
 
 
 allowed_to_prompt_ai = {
     Users.cmyui,
     Users.rapha,
     Users.fkzoink,
+    Users.flame,
+    Users.mistral,
 }
 
 
