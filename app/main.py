@@ -179,14 +179,64 @@ async def cost(interaction: discord.Interaction):
     if thread is None:
         return
 
+    # TODO: display cost per user
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
-    users = []
     tokens_used = sum(m["tokens_used"] for m in messages)
     response_cost = openai_pricing.tokens_to_dollars(thread["model"], tokens_used)
 
     await interaction.response.send_message(
         f"The running total of this thread is ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
-        ephemeral=True,
+    )
+
+
+@command_tree.command(name="model")
+async def model(
+    interaction: discord.Interaction,
+    model: Literal["gpt-4", "gpt-3.5-turbo"],
+):
+    if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    thread = await threads.fetch_one(interaction.channel.id)
+    if thread is None:
+        return
+
+    await threads.partial_update(thread["thread_id"], model=model)
+
+    await interaction.response.send_message(
+        content="\n".join(
+            (
+                f"**Model switched to {model}**",
+                f"Model Rate: ${openai_pricing.price_for_model(model)}/1000 tokens",
+            )
+        ),
+    )
+
+
+@command_tree.command(name="context")
+async def context(
+    interaction: discord.Interaction,
+    context_length: int,
+):
+    if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    thread = await threads.fetch_one(interaction.channel.id)
+    if thread is None:
+        return
+
+    await threads.partial_update(
+        thread["thread_id"],
+        context_length=context_length,
+    )
+
+    await interaction.response.send_message(
+        content="\n".join(
+            (
+                f"**Context length (messages length preserved) updated to {context_length}**",
+                f"NOTE: longer context costs linearly more tokens, so please take care.",
+            )
+        )
     )
 
 
