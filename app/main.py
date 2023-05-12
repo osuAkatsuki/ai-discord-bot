@@ -72,7 +72,7 @@ command_tree = discord.app_commands.CommandTree(bot)
 # whitelist users who are allowed to use the askai command
 class Users:
     cmyui = 285190493703503872
-    rapha = 652715384075714574
+    rapha = 153954447247147018
     fkzoink = 332722012877357066
 
 
