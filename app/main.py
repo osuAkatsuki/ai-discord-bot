@@ -294,10 +294,6 @@ async def summarize(
             break
 
     messages = messages[::-1]  # reverse it
-    import pprint
-
-    pprint.pp(messages)
-    return
 
     messages.append(
         {
