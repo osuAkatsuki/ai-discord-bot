@@ -1,0 +1,1 @@
+ALTER TABLE threads ADD COLUMN context_length INTEGER NOT NULL DEFAULT 5;
