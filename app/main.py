@@ -76,7 +76,11 @@ class Users:
     fkzoink = 332722012877357066
 
 
-allowed_to_ask_ai = {Users.cmyui}
+allowed_to_prompt_ai = {
+    Users.cmyui,
+    Users.rapha,
+    Users.fkzoink,
+}
 
 
 @bot.event
