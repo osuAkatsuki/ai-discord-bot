@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-from typing import Any
 import os.path
 import sys
+from typing import Any
+from typing import Literal
 
 import discord
-from typing import Literal
 import openai
 from openai.openai_object import OpenAIObject
 
@@ -264,7 +264,6 @@ async def ai(
                 f"Model Rate: ${openai_pricing.price_for_model(model)}/1000 tokens",
             )
         ),
-        ephemeral=True,
         wait=True,
     )
 
@@ -276,6 +275,7 @@ async def ai(
         thread.id,
         initiator_user_id=interaction.user.id,
         model=model,
+        context_length=5,  # messages
     )
 
 
