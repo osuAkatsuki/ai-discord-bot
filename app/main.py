@@ -128,6 +128,11 @@ async def on_message(message: discord.Message):
     if bot.user not in message.mentions:
         return
 
+    # has permissions to use this bot
+    if message.author.id not in allowed_to_prompt_ai:
+        await message.channel.send("You are not allowed to use this command")
+        return
+
     # they are in a thread that we are tracking
     tracked_thread = await threads.fetch_one(message.channel.id)
     if tracked_thread is None:
@@ -181,6 +186,13 @@ async def cost(interaction: discord.Interaction):
     if not isinstance(interaction.channel, discord.Thread):
         return
 
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
         return
@@ -201,6 +213,13 @@ async def model(
     model: Literal["gpt-4", "gpt-3.5-turbo"],
 ):
     if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
         return
 
     thread = await threads.fetch_one(interaction.channel.id)
@@ -225,6 +244,13 @@ async def context(
     context_length: int,
 ):
     if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
         return
 
     if context_length > MAX_CONTENT_LENGTH:
@@ -262,6 +288,13 @@ async def summarize(
     end_message: str | None = None,
 ):
     if not isinstance(interaction.channel, discord.abc.Messageable):
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
         return
 
     await interaction.response.defer()
@@ -324,19 +357,19 @@ async def ai(
     interaction: discord.Interaction,
     model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
 ):
-    if interaction.user.id not in allowed_to_prompt_ai:
-        await interaction.response.send_message(
-            "You are not allowed to use this command",
-            ephemeral=True,
-        )
-        return
-
     if (
         interaction.channel is not None
         and interaction.channel.type == discord.ChannelType.private
     ):
         await interaction.response.send_message(
             "This command cannot be used in private messages",
+            ephemeral=True,
+        )
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
             ephemeral=True,
         )
         return
