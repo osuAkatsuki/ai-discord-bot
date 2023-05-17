@@ -3,6 +3,7 @@ import os.path
 import sys
 from typing import Any
 from typing import Literal
+import io
 
 import discord.abc
 import openai
@@ -57,10 +58,12 @@ class Bot(discord.Client):
         await super().start(*args, **kwargs)
 
     async def close(self, *args: Any, **kwargs: Any) -> None:
+        print("closing")
         await state.read_database.disconnect()
         await state.write_database.disconnect()
 
         await super().close(*args, **kwargs)
+        print("closed")
 
 
 intents = discord.Intents.default()
@@ -399,6 +402,43 @@ async def ai(
         model=model,
         context_length=5,  # messages
     )
+
+
+@command_tree.command(name="transcript")
+async def transcript(
+    interaction: discord.Interaction,
+    context_length: int | None = None,
+):
+    if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    thread = await threads.fetch_one(interaction.channel.id)
+    if thread is None:
+        return
+
+    current_thread_messages = await thread_messages.fetch_many(
+        thread_id=interaction.channel.id,
+        page_size=context_length,
+    )
+
+    transcript_content = "\n".join(
+        "[{created_at:%d/%m/%Y %I:%M:%S%p}] {author}: {content}".format(**msg)
+        for msg in current_thread_messages
+    )
+    with io.BytesIO(transcript_content.encode()) as f:
+        await interaction.followup.send(
+            content=f"{interaction.user.mention}: here is your AI transcript for this thread.",
+            file=discord.File(f),
+        )
 
 
 if __name__ == "__main__":
