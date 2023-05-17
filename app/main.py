@@ -431,7 +431,7 @@ async def transcript(
     )
 
     transcript_content = "\n".join(
-        "[{created_at:%d/%m/%Y %I:%M:%S%p}] {author}: {content}".format(**msg)
+        "[{created_at:%d/%m/%Y %I:%M:%S%p}] {content}".format(**msg)
         for msg in current_thread_messages
     )
     with io.BytesIO(transcript_content.encode()) as f:
