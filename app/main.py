@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import io
 import os.path
 import sys
 from typing import Any
 from typing import Literal
-import io
 
 import discord.abc
 import openai
@@ -58,12 +58,10 @@ class Bot(discord.Client):
         await super().start(*args, **kwargs)
 
     async def close(self, *args: Any, **kwargs: Any) -> None:
-        print("closing")
         await state.read_database.disconnect()
         await state.write_database.disconnect()
 
         await super().close(*args, **kwargs)
-        print("closed")
 
 
 intents = discord.Intents.default()
