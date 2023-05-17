@@ -459,7 +459,7 @@ async def transcript(
     with io.BytesIO(transcript_content.encode()) as f:
         await interaction.followup.send(
             content=f"{interaction.user.mention}: here is your AI transcript for this thread.",
-            file=discord.File(f),
+            file=discord.File(f, filename="transcript.txt"),
         )
 
 
