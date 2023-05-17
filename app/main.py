@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import io
 import os.path
 import sys
 from typing import Any
@@ -193,8 +194,14 @@ async def cost(interaction: discord.Interaction):
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     # TODO: display cost per user
@@ -202,7 +209,7 @@ async def cost(interaction: discord.Interaction):
     tokens_used = sum(m["tokens_used"] for m in messages)
     response_cost = openai_pricing.tokens_to_dollars(thread["model"], tokens_used)
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"The running total of this thread is ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
     )
 
@@ -222,13 +229,19 @@ async def model(
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     await threads.partial_update(thread["thread_id"], model=model)
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         content="\n".join(
             (
                 f"**Model switched to {model}**",
@@ -259,8 +272,14 @@ async def context(
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     await threads.partial_update(
@@ -268,7 +287,7 @@ async def context(
         context_length=context_length,
     )
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         content="\n".join(
             (
                 f"**Context length (messages length preserved) updated to {context_length}**",
@@ -399,6 +418,47 @@ async def ai(
         model=model,
         context_length=5,  # messages
     )
+
+
+@command_tree.command(name="transcript")
+async def transcript(
+    interaction: discord.Interaction,
+    context_length: int | None = None,
+):
+    if not isinstance(interaction.channel, discord.Thread):
+        return
+
+    if interaction.user.id not in allowed_to_prompt_ai:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    thread = await threads.fetch_one(interaction.channel.id)
+    if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
+        return
+
+    current_thread_messages = await thread_messages.fetch_many(
+        thread_id=interaction.channel.id,
+        page_size=context_length,
+    )
+
+    transcript_content = "\n".join(
+        "[{created_at:%d/%m/%Y %I:%M:%S%p}] {content}".format(**msg)
+        for msg in current_thread_messages
+    )
+    with io.BytesIO(transcript_content.encode()) as f:
+        await interaction.followup.send(
+            content=f"{interaction.user.mention}: here is your AI transcript for this thread.",
+            file=discord.File(f, filename="transcript.txt"),
+        )
 
 
 if __name__ == "__main__":
