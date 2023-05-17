@@ -72,21 +72,22 @@ bot = Bot(intents=intents)
 command_tree = discord.app_commands.CommandTree(bot)
 
 
-# whitelist users who are allowed to use the askai command
-class Users:
-    cmyui = 285190493703503872
-    rapha = 153954447247147018
-    fkzoink = 332722012877357066
-    flame = 347459855449325570
-    mistral = 249596453457100801
-
-
-allowed_to_prompt_ai = {
-    Users.cmyui,
-    Users.rapha,
-    Users.fkzoink,
-    Users.flame,
-    Users.mistral,
+DISCORD_USER_ID_WHITELIST = {
+    # Akatsuki
+    285190493703503872,  # cmyui
+    347459855449325570,  # flame
+    1011439359083413564,  # kat
+    291927822635761665,  # len
+    418325367724703755,  # niotid
+    263413454709194753,  # realistik
+    241178004682833920,  # riffee
+    272111921610752003,  # tsunyoku
+    793331642801324063,  # woot
+    153954447247147018,  # rapha
+    190278149030936576,  # randomize
+    249596453457100801,  # mistral
+    # Super
+    332722012877357066,  # fkzoink
 }
 
 
@@ -130,7 +131,7 @@ async def on_message(message: discord.Message):
         return
 
     # has permissions to use this bot
-    if message.author.id not in allowed_to_prompt_ai:
+    if message.author.id not in DISCORD_USER_ID_WHITELIST:
         await message.channel.send("You are not allowed to use this command")
         return
 
@@ -187,7 +188,7 @@ async def cost(interaction: discord.Interaction):
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -222,7 +223,7 @@ async def model(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -259,7 +260,7 @@ async def context(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -309,7 +310,7 @@ async def summarize(
     if not isinstance(interaction.channel, discord.abc.Messageable):
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -386,7 +387,7 @@ async def ai(
         )
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -428,7 +429,7 @@ async def transcript(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in allowed_to_prompt_ai:
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
