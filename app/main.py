@@ -196,8 +196,14 @@ async def cost(interaction: discord.Interaction):
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     # TODO: display cost per user
@@ -205,7 +211,7 @@ async def cost(interaction: discord.Interaction):
     tokens_used = sum(m["tokens_used"] for m in messages)
     response_cost = openai_pricing.tokens_to_dollars(thread["model"], tokens_used)
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"The running total of this thread is ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
     )
 
@@ -225,13 +231,19 @@ async def model(
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     await threads.partial_update(thread["thread_id"], model=model)
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         content="\n".join(
             (
                 f"**Model switched to {model}**",
@@ -262,8 +274,14 @@ async def context(
         )
         return
 
+    await interaction.response.defer()
+
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     await threads.partial_update(
@@ -271,7 +289,7 @@ async def context(
         context_length=context_length,
     )
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         content="\n".join(
             (
                 f"**Context length (messages length preserved) updated to {context_length}**",
@@ -423,6 +441,10 @@ async def transcript(
 
     thread = await threads.fetch_one(interaction.channel.id)
     if thread is None:
+        await interaction.followup.send(
+            "This thread is not tracked by the bot.",
+            ephemeral=True,
+        )
         return
 
     current_thread_messages = await thread_messages.fetch_many(
