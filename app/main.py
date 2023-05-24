@@ -5,6 +5,7 @@ import sys
 from typing import Any
 from typing import Literal
 
+import discord
 import discord.abc
 import openai
 from openai.openai_object import OpenAIObject
@@ -146,41 +147,42 @@ async def on_message(message: discord.Message):
 
     prompt = f"{message.author.display_name}: {prompt}"
 
-    await thread_messages.create(
-        message.channel.id,
-        prompt,
-        role="user",
-        tokens_used=0,
-    )
+    async with message.channel.typing():
+        await thread_messages.create(
+            message.channel.id,
+            prompt,
+            role="user",
+            tokens_used=0,
+        )
 
-    thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
+        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
-    message_history = [
-        {"role": m["role"], "content": m["content"]}
-        # keep 10 messages before the prompt
-        # TODO: allow some users to configure this per-thread
-        for m in thread_history[-tracked_thread["context_length"] :]
-    ]
-    message_history.append({"role": "user", "content": prompt})
+        message_history = [
+            {"role": m["role"], "content": m["content"]}
+            # keep 10 messages before the prompt
+            # TODO: allow some users to configure this per-thread
+            for m in thread_history[-tracked_thread["context_length"] :]
+        ]
+        message_history.append({"role": "user", "content": prompt})
 
-    gpt_response = await openai.ChatCompletion.acreate(
-        model=tracked_thread["model"],
-        messages=message_history,
-    )
-    assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+        gpt_response = await openai.ChatCompletion.acreate(
+            model=tracked_thread["model"],
+            messages=message_history,
+        )
+        assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
 
-    gpt_response_content = gpt_response.choices[0].message.content
-    tokens_spent = gpt_response.usage.total_tokens
+        gpt_response_content = gpt_response.choices[0].message.content
+        tokens_spent = gpt_response.usage.total_tokens
 
-    for chunk in split_message(gpt_response_content, 2000):
-        await message.channel.send(chunk)
+        for chunk in split_message(gpt_response_content, 2000):
+            await message.channel.send(chunk)
 
-    await thread_messages.create(
-        message.channel.id,
-        gpt_response_content,
-        role="assistant",
-        tokens_used=tokens_spent,
-    )
+        await thread_messages.create(
+            message.channel.id,
+            gpt_response_content,
+            role="assistant",
+            tokens_used=tokens_spent,
+        )
 
 
 @command_tree.command(name="cost")
