@@ -6,7 +6,6 @@ from typing import Any
 from typing import Literal
 
 import discord.abc
-from app.adapters.openai import gpt
 
 # add .. to path
 srv_root = os.path.join(os.path.dirname(__file__), "..")
@@ -14,6 +13,7 @@ sys.path.append(srv_root)
 
 from app import openai_pricing, state
 from app.adapters import database
+from app.adapters.openai import gpt
 from app.repositories import thread_messages, threads
 from app import settings
 
