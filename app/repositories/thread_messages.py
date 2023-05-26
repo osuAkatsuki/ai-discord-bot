@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 from typing import cast
 from typing import TypedDict
+from typing import Literal
 
 from app import state
 
@@ -18,7 +19,7 @@ class ThreadMessage(TypedDict):
     thread_message_id: int
     thread_id: int
     content: str
-    role: str
+    role: Literal["user", "assistant"]
     tokens_used: int
     created_at: datetime
 
@@ -26,7 +27,7 @@ class ThreadMessage(TypedDict):
 async def create(
     thread_id: int,
     content: str,
-    role: str,
+    role: Literal["user", "assistant"],
     tokens_used: int,
 ) -> ThreadMessage:
     query = f"""\
@@ -57,7 +58,7 @@ async def fetch_one(thread_message_id: int) -> ThreadMessage:
 
 async def fetch_many(
     thread_id: int | None = None,
-    role: str | None = None,
+    role: Literal["user", "assistant"] | None = None,
     page: int | None = None,
     page_size: int | None = None,
 ) -> list[ThreadMessage]:

@@ -1,4 +1,5 @@
 asyncpg
+backoff
 databases
 discord.py
 openai

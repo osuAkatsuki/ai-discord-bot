@@ -5,10 +5,8 @@ import sys
 from typing import Any
 from typing import Literal
 
-import discord
 import discord.abc
-import openai
-from openai.openai_object import OpenAIObject
+from app.adapters.openai import gpt
 
 # add .. to path
 srv_root = os.path.join(os.path.dirname(__file__), "..")
@@ -98,7 +96,10 @@ async def on_ready():
     # it may be called more than a single time.
     # our lifecycle hook is in our Bot class definition
 
+    import openai
+
     openai.api_key = settings.OPENAI_API_KEY
+
     await command_tree.sync()
 
 
@@ -158,18 +159,21 @@ async def on_message(message: discord.Message):
         thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
         message_history = [
-            {"role": m["role"], "content": m["content"]}
+            gpt.Message(role=m["role"], content=m["content"])
             # keep 10 messages before the prompt
             # TODO: allow some users to configure this per-thread
             for m in thread_history[-tracked_thread["context_length"] :]
         ]
         message_history.append({"role": "user", "content": prompt})
 
-        gpt_response = await openai.ChatCompletion.acreate(
-            model=tracked_thread["model"],
-            messages=message_history,
-        )
-        assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+        gpt_response = await gpt.send(tracked_thread["model"], message_history)
+        if not gpt_response:
+            await message.channel.send(
+                f"Request failed after multiple retries.\n"
+                f"Please try again after some time.\n"
+                f"If this issue persists, please contact cmyui#0425 on discord."
+            )
+            return
 
         gpt_response_content = gpt_response.choices[0].message.content
         tokens_spent = gpt_response.usage.total_tokens
@@ -361,11 +365,7 @@ async def summarize(
         }
     )
 
-    gpt_response = await openai.ChatCompletion.acreate(
-        model="gpt-4",
-        messages=messages,
-    )
-    assert isinstance(gpt_response, OpenAIObject)  # TODO: can we do better?
+    gpt_response = await gpt.send("gpt-4", messages)
 
     gpt_response_content = gpt_response.choices[0].message.content
     # tokens_spent = gpt_response.usage.total_tokens
