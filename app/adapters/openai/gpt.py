@@ -67,6 +67,10 @@ async def send(
 
     https://beta.openai.com/docs/api-reference/create-completion
     """
-    response = await openai.ChatCompletion.acreate(model, messages)
+    # NOTE: this call *requires* the use of kwargs
+    response = await openai.ChatCompletion.acreate(
+        model=model,
+        messages=messages,
+    )
     assert isinstance(response, OpenAIObject)
     return response
