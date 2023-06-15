@@ -97,7 +97,7 @@ DISCORD_USER_ID_WHITELIST = {
 
 def command_name(name: str) -> str:
     if settings.APP_ENV != "production":
-        name = f"dev{name}"  # e.g. "ai" becomes "devai" in test envs
+        name = f"dev{name}"  # e.g. "/ai" becomes "/devai" in test envs
     return name
 
 
