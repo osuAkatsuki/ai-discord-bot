@@ -32,6 +32,8 @@ class OpenAIFunction(TypedDict):
 
 ai_functions: dict[str, OpenAIFunction] = {}
 
+UNSET = object()
+
 
 def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSchema:
     assert f.__doc__ is not None, "All AI functions must have docstrings"
@@ -50,7 +52,7 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
     for (param_name, param_type), default_val in itertools.zip_longest(  # type: ignore
         hints.items(),
         f.__defaults__ or [],
-        fillvalue=None,
+        fillvalue=UNSET,
     ):
         if param_name == "return":
             continue
@@ -59,7 +61,7 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
             "type": param_type.__origin__.__name__,
             "description": param_type.__metadata__[0],
         }
-        if not default_val:
+        if default_val is UNSET:
             schema["parameters"]["required"].append(param_name)
 
     return schema
