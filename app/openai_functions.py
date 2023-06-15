@@ -3,7 +3,6 @@ from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Annotated
 from typing import get_type_hints
-from typing import Required
 from typing import TypedDict
 
 from app.adapters.openai.gpt import Function
