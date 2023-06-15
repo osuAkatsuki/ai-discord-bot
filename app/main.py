@@ -177,7 +177,7 @@ async def on_message(message: discord.Message):
         ]
         message_history.append({"role": "user", "content": prompt})
 
-        functions: list[gpt.Function] = openai_functions.get_openai_function_schema()
+        functions = openai_functions.get_full_openai_functions_schema()
         gpt_response = await gpt.send(
             tracked_thread["model"],
             message_history,

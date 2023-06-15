@@ -63,7 +63,7 @@ def ai_function(f: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str
     return f
 
 
-def get_openai_function_schema() -> list[Function]:
+def get_full_openai_functions_schema() -> list[Function]:
     return [f["schema"] for f in ai_functions.values()]
     # return [
     #     {
