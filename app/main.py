@@ -90,6 +90,12 @@ DISCORD_USER_ID_WHITELIST = {
 }
 
 
+def command_name(name: str) -> str:
+    if settings.APP_ENV != "production":
+        name = f"dev{name}"  # e.g. "ai" becomes "devai" in test envs
+    return name
+
+
 @bot.event
 async def on_ready():
     # NOTE: we can't use this as a lifecycle hook because
@@ -189,7 +195,7 @@ async def on_message(message: discord.Message):
         )
 
 
-@command_tree.command(name="cost")
+@command_tree.command(name=command_name("cost"))
 async def cost(interaction: discord.Interaction):
     if not isinstance(interaction.channel, discord.Thread):
         return
@@ -221,7 +227,7 @@ async def cost(interaction: discord.Interaction):
     )
 
 
-@command_tree.command(name="model")
+@command_tree.command(name=command_name("model"))
 async def model(
     interaction: discord.Interaction,
     model: Literal["gpt-4", "gpt-3.5-turbo"],
@@ -258,7 +264,7 @@ async def model(
     )
 
 
-@command_tree.command(name="context")
+@command_tree.command(name=command_name("context"))
 async def context(
     interaction: discord.Interaction,
     context_length: int,
@@ -304,7 +310,7 @@ async def context(
     )
 
 
-@command_tree.command(name="summarize")
+@command_tree.command(name=command_name("summarize"))
 async def summarize(
     interaction: discord.Interaction,
     # support num of messages OR a starting location (message id)
@@ -374,7 +380,7 @@ async def summarize(
         await interaction.followup.send(chunk)
 
 
-@command_tree.command(name="ai")
+@command_tree.command(name=command_name("ai"))
 async def ai(
     interaction: discord.Interaction,
     model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
@@ -423,7 +429,7 @@ async def ai(
     )
 
 
-@command_tree.command(name="transcript")
+@command_tree.command(name=command_name("transcript"))
 async def transcript(
     interaction: discord.Interaction,
     context_length: int | None = None,
