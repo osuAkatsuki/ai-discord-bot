@@ -7,6 +7,7 @@ from typing import Any
 from typing import Literal
 
 import discord.abc
+import httpx
 
 # add .. to path
 srv_root = os.path.join(os.path.dirname(__file__), "..")
@@ -59,11 +60,15 @@ class Bot(discord.Client):
         )
         await state.write_database.connect()
 
+        state.http_client = httpx.AsyncClient()
+
         await super().start(*args, **kwargs)
 
     async def close(self, *args: Any, **kwargs: Any) -> None:
         await state.read_database.disconnect()
         await state.write_database.disconnect()
+
+        await state.http_client.aclose()
 
         await super().close(*args, **kwargs)
 

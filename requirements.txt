@@ -2,5 +2,6 @@ asyncpg
 backoff
 databases
 discord.py
+httpx
 openai
 python-dotenv
