@@ -6,28 +6,12 @@ from typing import get_type_hints
 from typing import Required
 from typing import TypedDict
 
-
-class Property(TypedDict, total=False):
-    type: Required[str]
-    enum: list[str]  # optional
-    description: Required[str]
-
-
-class Parameters(TypedDict):
-    type: str
-    properties: dict[str, Property]
-    required: list[str]
-
-
-class FunctionSchema(TypedDict):
-    name: str
-    description: str
-    parameters: Parameters
+from app.adapters.openai.gpt import Function
 
 
 class OpenAIFunction(TypedDict):
     callback: Callable[..., Awaitable[str]]
-    schema: FunctionSchema
+    schema: Function
 
 
 ai_functions: dict[str, OpenAIFunction] = {}
@@ -35,10 +19,10 @@ ai_functions: dict[str, OpenAIFunction] = {}
 UNSET = object()
 
 
-def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSchema:
+def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> Function:
     assert f.__doc__ is not None, "All AI functions must have docstrings"
 
-    schema: FunctionSchema = {
+    schema: Function = {
         "name": f.__name__,
         "description": f.__doc__,
         "parameters": {
@@ -80,7 +64,7 @@ def ai_function(f: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str
     return f
 
 
-def get_openai_function_schema() -> list[FunctionSchema]:
+def get_openai_function_schema() -> list[Function]:
     return [f["schema"] for f in ai_functions.values()]
     # return [
     #     {
@@ -109,10 +93,3 @@ async def get_weather_for_location(
         return "23.45C"
     else:
         return "no result found"
-
-
-if __name__ == "__main__":
-    # for testing
-    import pprint
-
-    pprint.pp(get_openai_function_schema())
