@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any
 from typing import cast
-from typing import TypedDict
 from typing import Literal
+from typing import TypedDict
 
 from app import state
 

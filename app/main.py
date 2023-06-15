@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import io
+import json
 import os.path
 import sys
 from typing import Any
@@ -11,11 +12,15 @@ import discord.abc
 srv_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.append(srv_root)
 
-from app import openai_pricing, state
+from app import openai_functions
+from app import openai_pricing
+from app import settings
+from app import state
 from app.adapters import database
 from app.adapters.openai import gpt
-from app.repositories import thread_messages, threads
-from app import settings
+from app.repositories import thread_messages
+from app.repositories import threads
+
 
 MAX_CONTENT_LENGTH = 100
 
@@ -172,7 +177,12 @@ async def on_message(message: discord.Message):
         ]
         message_history.append({"role": "user", "content": prompt})
 
-        gpt_response = await gpt.send(tracked_thread["model"], message_history)
+        functions: list[gpt.Function] = openai_functions.get_openai_function_schema()
+        gpt_response = await gpt.send(
+            tracked_thread["model"],
+            message_history,
+            functions,
+        )
         if not gpt_response:
             await message.channel.send(
                 f"Request failed after multiple retries.\n"
@@ -181,7 +191,33 @@ async def on_message(message: discord.Message):
             )
             return
 
-        gpt_response_content = gpt_response.choices[0].message.content
+        gpt_choice = gpt_response["choices"][0]
+        gpt_message = gpt_choice["message"]
+        message_history.append(gpt_message)
+
+        if gpt_choice["finish_reason"] == "stop":
+            gpt_response_content = gpt_message["content"]
+        elif gpt_choice["finish_reason"] == "function_call":
+            function_name = gpt_message["function_call"]["name"]
+            ai_function = openai_functions.ai_functions[function_name]
+            function_kwargs = json.loads(gpt_message["function_call"]["arguments"])
+            function_response = await ai_function["callback"](**function_kwargs)
+            message_history.append(
+                {
+                    "role": "function",
+                    "name": function_name,
+                    "content": function_response,
+                }
+            )
+            # TODO: could it call another function? this should support recursive calls ig
+            gpt_response = await gpt.send(tracked_thread["model"], message_history)
+            gpt_response_content = gpt_response["choices"][0]["message"]["content"]
+
+        else:
+            raise NotImplementedError(
+                f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
+            )
+
         tokens_spent = gpt_response.usage.total_tokens
 
         for chunk in split_message(gpt_response_content, 2000):
