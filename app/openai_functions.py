@@ -57,6 +57,10 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
         if param_name == "return":
             continue
 
+        assert (
+            len(param_type.__metadata__) == 1
+        ), "All AI function parameters must have a description"
+
         schema["parameters"]["properties"][param_name] = {
             "type": param_type.__origin__.__name__,
             "description": param_type.__metadata__[0],
