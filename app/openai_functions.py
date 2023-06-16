@@ -4,7 +4,6 @@ import typing
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Annotated
-from typing import Any
 from typing import TypedDict
 
 from app import settings
@@ -118,6 +117,10 @@ def get_full_openai_functions_schema() -> list[FunctionSchema]:
 location_cache: dict[str, tuple[float, float]] = {}
 
 
+def celcius_to_fahrenheit(degrees_celcius: float) -> float:
+    return (degrees_celcius * 9 / 5) + 32.0
+
+
 @ai_function
 async def get_weather_for_location(
     location: Annotated[str, "The city name for which to fetch the weather"],
@@ -152,7 +155,7 @@ async def get_weather_for_location(
     response.raise_for_status()
     response_data = response.json()
 
-    # TODO: fahrenheit
     degrees_celcius = response_data["hourly"]["temperature_2m"][-1]
+    degrees_fahrenheit = celcius_to_fahrenheit(degrees_celcius)
 
-    return f"{degrees_celcius}°C"
+    return f"{degrees_celcius}°C / {degrees_fahrenheit}°F"
