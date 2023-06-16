@@ -28,7 +28,7 @@ class Parameters(TypedDict):
     required: list[str]
 
 
-class Function(TypedDict):
+class FunctionSchema(TypedDict):
     name: str
     description: str
     parameters: Parameters
@@ -82,7 +82,7 @@ def _is_non_retriable_error(error: Exception) -> bool:
 async def send(
     model: str,
     messages: Sequence[Message],
-    functions: Sequence[Function] | None = None,
+    functions: Sequence[FunctionSchema] | None = None,
 ) -> OpenAIObject:
     """\
     Send a message to the OpenAI API, as a given model.
