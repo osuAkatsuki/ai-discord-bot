@@ -202,11 +202,17 @@ async def on_message(message: discord.Message):
 
         if gpt_choice["finish_reason"] == "stop":
             gpt_response_content = gpt_message["content"]
+
         elif gpt_choice["finish_reason"] == "function_call":
             function_name = gpt_message["function_call"]["name"]
-            ai_function = openai_functions.ai_functions[function_name]
             function_kwargs = json.loads(gpt_message["function_call"]["arguments"])
+
+            ai_function = openai_functions.ai_functions[function_name]
             function_response = await ai_function["callback"](**function_kwargs)
+
+            # send function response back to gpt for the final response
+            # TODO: could it call another function?
+            #       i think this should support recursive calls
             message_history.append(
                 {
                     "role": "function",
@@ -214,7 +220,6 @@ async def on_message(message: discord.Message):
                     "content": function_response,
                 }
             )
-            # TODO: could it call another function? this should support recursive calls ig
             gpt_response = await gpt.send(tracked_thread["model"], message_history)
             gpt_response_content = gpt_response["choices"][0]["message"]["content"]
 
