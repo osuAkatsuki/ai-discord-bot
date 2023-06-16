@@ -176,8 +176,6 @@ async def on_message(message: discord.Message):
 
         message_history = [
             gpt.Message(role=m["role"], content=m["content"])
-            # keep 10 messages before the prompt
-            # TODO: allow some users to configure this per-thread
             for m in thread_history[-tracked_thread["context_length"] :]
         ]
         message_history.append({"role": "user", "content": prompt})
