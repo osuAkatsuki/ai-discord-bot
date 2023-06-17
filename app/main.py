@@ -16,8 +16,8 @@ sys.path.append(srv_root)
 from app import openai_functions
 from app import openai_pricing
 from app import settings
+from app import initial_setups
 from app import state
-from app.adapters import database
 from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
@@ -30,35 +30,12 @@ MAX_CONTENT_LENGTH = 100
 # haven't been able to find anything reliable in discord.py for them
 class Bot(discord.Client):
     async def start(self, *args, **kwargs) -> None:
-        state.read_database = database.Database(
-            database.dsn(
-                scheme="postgresql",
-                user=settings.READ_DB_USER,
-                password=settings.READ_DB_PASS,
-                host=settings.READ_DB_HOST,
-                port=settings.READ_DB_PORT,
-                database=settings.READ_DB_NAME,
-            ),
-            db_ssl=settings.READ_DB_USE_SSL,
-            min_pool_size=settings.DB_POOL_MIN_SIZE,
-            max_pool_size=settings.DB_POOL_MAX_SIZE,
-        )
         await state.read_database.connect()
-
-        state.write_database = database.Database(
-            database.dsn(
-                scheme="postgresql",
-                user=settings.WRITE_DB_USER,
-                password=settings.WRITE_DB_PASS,
-                host=settings.WRITE_DB_HOST,
-                port=settings.WRITE_DB_PORT,
-                database=settings.WRITE_DB_NAME,
-            ),
-            db_ssl=settings.WRITE_DB_USE_SSL,
-            min_pool_size=settings.DB_POOL_MIN_SIZE,
-            max_pool_size=settings.DB_POOL_MAX_SIZE,
-        )
         await state.write_database.connect()
+
+        # also make a read-only connection to akatsuki's
+        # mysql database for ai-assisted analysis
+        await state.akatsuki_read_database.connect()
 
         state.http_client = httpx.AsyncClient()
 
@@ -67,6 +44,8 @@ class Bot(discord.Client):
     async def close(self, *args: Any, **kwargs: Any) -> None:
         await state.read_database.disconnect()
         await state.write_database.disconnect()
+
+        await state.akatsuki_read_database.disconnect()
 
         await state.http_client.aclose()
 
@@ -158,6 +137,24 @@ async def on_message(message: discord.Message):
     if tracked_thread is None:
         return
 
+    thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
+
+    message_history = [
+        gpt.Message(role=m["role"], content=m["content"])
+        for m in thread_history[-tracked_thread["context_length"] :]
+    ]
+
+    message_history = []
+    initial_setup = tracked_thread.get("initial_setup")
+    if initial_setup is not None:
+        initial_messages = initial_setups.get_initial_setup(initial_setup)
+        if initial_messages is None:
+            await message.channel.send(f"Unknown initial setup: {initial_setup}")
+            return
+
+        for m in reversed(initial_messages):
+            message_history.insert(0, m)
+
     prompt = message.clean_content
     if prompt.startswith(f"{bot.user.mention} "):
         prompt = prompt.removeprefix(f"{bot.user.mention} ")
@@ -172,15 +169,17 @@ async def on_message(message: discord.Message):
             tokens_used=0,
         )
 
-        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
-
-        message_history = [
-            gpt.Message(role=m["role"], content=m["content"])
-            for m in thread_history[-tracked_thread["context_length"] :]
-        ]
         message_history.append({"role": "user", "content": prompt})
 
         functions = openai_functions.get_full_openai_functions_schema()
+
+        print(
+            "sending with history",
+            "\n\n\n\n\n",
+            "\n\n".join(map(str, message_history)),
+            "\n\n\n\n\n\n",
+        )
+
         gpt_response = await gpt.send(
             tracked_thread["model"],
             message_history,
@@ -428,6 +427,7 @@ async def summarize(
 async def ai(
     interaction: discord.Interaction,
     model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
+    initial_setup: Literal["akatsuki-db"] = "akatsuki-db",
 ):
     if (
         interaction.channel is not None
@@ -469,6 +469,7 @@ async def ai(
         thread.id,
         initiator_user_id=interaction.user.id,
         model=model,
+        initial_setup=initial_setup,
         context_length=5,  # messages
     )
 

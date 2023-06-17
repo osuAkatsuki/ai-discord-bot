@@ -1,3 +1,4 @@
+aiomysql
 asyncpg
 backoff
 databases

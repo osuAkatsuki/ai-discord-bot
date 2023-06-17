@@ -11,7 +11,7 @@ from openai.openai_object import OpenAIObject
 
 
 class Message(TypedDict, total=False):
-    role: Required[Literal["user", "assistant", "function"]]
+    role: Required[Literal["user", "assistant", "function", "system"]]
     content: Required[str]
     name: str  # only exists when role is "function"
 

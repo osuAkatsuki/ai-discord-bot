@@ -1,9 +1,14 @@
+import asyncio
 import itertools
+import json
 import logging
+import traceback
 import typing
 from collections.abc import Awaitable
 from collections.abc import Callable
+from datetime import datetime
 from typing import Annotated
+from typing import Any
 from typing import TypedDict
 
 from app import settings
@@ -119,6 +124,118 @@ location_cache: dict[str, tuple[float, float]] = {}
 
 def celcius_to_fahrenheit(degrees_celcius: float) -> float:
     return (degrees_celcius * 9 / 5) + 32.0
+
+
+def format_row_to_xml(row: dict[str, Any]):
+    # XXX: we can remove a few columns since we're a read-only connection
+    return f"<row><field>{row['Field']}</field><type>{row['Type']}</type><key>{row['Key']}</key></row>"
+    # return f"<row><field>{row['Field']}</field><type>{row['Type']}</type><null>{row['Null']}</null><key>{row['Key']}</key><default>{row['Default'] or 'NULL'}</default><extra>{row['Extra']}</extra></row>"
+
+
+def format_table_to_xml(table_name: str, rows: list[dict]) -> str:
+    formatted_rows = "\n".join(format_row_to_xml(row) for row in rows)
+    return f"<table><name>{table_name}</name><rows>{formatted_rows}</rows></table>"
+
+
+def get_db_schema_string() -> str:
+    async def inner_async_usage() -> str:
+        await state.akatsuki_read_database.connect()
+
+        # TODO: i wish we could pull all tables, but gpt-4-0613 only has a
+        # context window of 8K at the moment. gpt-4-32k-0613 doesn't seem to work.
+        # table_names = {
+        #     col["Tables_in_akatsuki"]
+        #     for col in await state.akatsuki_read_database.fetch_all("SHOW TABLES")
+        # } - {"_sqlx_migrations"}
+
+        table_names = {
+            "hw_user",
+            "scores_first",
+            # "anticheat_analyzes",
+            "users_achievements",
+            # "scores_relax",
+            # "scores_ap",
+            # "user_beatmaps",
+            "lastfm_flags",
+            # "aika_users_old",
+            "anticheat_queue",
+            "privileges_groups",
+            # "main_menu_icons",
+            # "faq",
+            # "anticheat_detections",
+            "rap_logs",
+            # "schema_seeds",
+            "achievements",
+            # "user_tourmnt_badges",
+            # "hw_comparison",
+            # "scores_removed_relax",
+            # "anticheat_function_checksums",
+            "users",
+            # "reports",
+            # "tourmnt_badges",
+            # "anticheat_instruction_patterns",
+            "ip_user",
+            "beatmaps",
+            "users_stats",
+            # "badges",
+            # "user_clans",
+            "beatmaps_playcounts",
+            # "ap_stats",
+            # "known_cheat_checksums",
+            # "anticheat_hardware",
+            "users_relationships",
+            # "pp_limits",
+            # "clans",
+            "scores",
+            # "rx_stats",
+            # "user_profile_history",
+        }
+
+        formatted_tables = []
+        for table_name in table_names:
+            table_description = await state.akatsuki_read_database.fetch_all(
+                f"DESCRIBE {table_name}"
+            )
+            formatted_table = format_table_to_xml(table_name, table_description)
+            formatted_tables.append(formatted_table)
+
+        await state.akatsuki_read_database.disconnect()
+        return "\n\n".join(formatted_tables)
+
+    return asyncio.run(inner_async_usage())
+
+
+def json_default_serializer(obj: Any) -> str:
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return str(obj)
+
+
+@ai_function
+async def ask_database(
+    query: Annotated[
+        str,
+        f"""\
+SQL query extracting info to answer the user's question.
+SQL should be written using this database schema:
+{get_db_schema_string()}
+Please return the query that was run, along with the results.
+The results should be returned in plain text, not in JSON.
+If you receive an error, please return it along with your thoughts.\
+""",
+    ],
+) -> str:
+    """Use this function to answer user questions about akatsuki's data. Output should be a fully formed SQL query."""
+    try:
+        result = await state.akatsuki_read_database.fetch_all(query)
+        return json.dumps(
+            result,
+            indent=4,
+            sort_keys=True,
+            default=json_default_serializer,
+        )
+    except:
+        return str(traceback.format_exc())
 
 
 @ai_function

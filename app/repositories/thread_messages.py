@@ -19,7 +19,7 @@ class ThreadMessage(TypedDict):
     thread_message_id: int
     thread_id: int
     content: str
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "function", "system"]
     tokens_used: int
     created_at: datetime
 
@@ -27,7 +27,7 @@ class ThreadMessage(TypedDict):
 async def create(
     thread_id: int,
     content: str,
-    role: Literal["user", "assistant"],
+    role: Literal["user", "assistant", "function", "system"],
     tokens_used: int,
 ) -> ThreadMessage:
     query = f"""\
@@ -58,7 +58,7 @@ async def fetch_one(thread_message_id: int) -> ThreadMessage:
 
 async def fetch_many(
     thread_id: int | None = None,
-    role: Literal["user", "assistant"] | None = None,
+    role: Literal["user", "assistant", "function", "system"] | None = None,
     page: int | None = None,
     page_size: int | None = None,
 ) -> list[ThreadMessage]:

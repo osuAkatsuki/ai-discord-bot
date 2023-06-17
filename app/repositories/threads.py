@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Any
 from typing import cast
+from typing import Literal
 from typing import TypedDict
 
 from app import state
@@ -9,6 +10,7 @@ READ_PARAMS = """\
     thread_id,
     initiator_user_id,
     model,
+    initial_setup,
     context_length,
     created_at
 """
@@ -18,6 +20,7 @@ class Thread(TypedDict):
     thread_id: int
     initiator_user_id: int
     model: str
+    initial_setup: Literal["akatsuki-db"]
     context_length: int
     created_at: datetime
 
@@ -26,17 +29,19 @@ async def create(
     thread_id: int,
     initiator_user_id: int,
     model: str,
+    initial_setup: str,
     context_length: int,
 ) -> Thread:
     query = f"""\
-        INSERT INTO threads (thread_id, initiator_user_id, model, context_length)
-        VALUES (:thread_id, :initiator_user_id, :model, :context_length)
+        INSERT INTO threads (thread_id, initiator_user_id, model, initial_setup, context_length)
+        VALUES (:thread_id, :initiator_user_id, :model, :initial_setup, :context_length)
         RETURNING {READ_PARAMS}
     """
     values: dict[str, Any] = {
         "thread_id": thread_id,
         "initiator_user_id": initiator_user_id,
         "model": model,
+        "initial_setup": initial_setup,
         "context_length": context_length,
     }
     rec = await state.write_database.fetch_one(query, values)
