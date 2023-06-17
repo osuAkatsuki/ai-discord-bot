@@ -174,7 +174,7 @@ async def on_message(message: discord.Message):
         gpt_choice = gpt_response["choices"][0]
         gpt_message = gpt_choice["message"]
 
-        if gpt_choice["finish_reason"] == "stop":
+        if gpt_choice["finish_reason"] in ("stop", "length"):
             # assistant is replying to our message history
             gpt_response_content = gpt_message["content"]
             thread_message = await thread_messages.create(
@@ -227,6 +227,7 @@ async def on_message(message: discord.Message):
             our_thread_messages.append(thread_message)
 
         else:
+            print(gpt_response)
             raise NotImplementedError(
                 f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
             )
