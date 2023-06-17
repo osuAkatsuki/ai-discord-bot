@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
 from typing import Literal
@@ -9,10 +8,18 @@ import backoff
 import openai.error
 from openai.openai_object import OpenAIObject
 
+from app.repositories.thread_messages import ThreadMessage
+
+
+class FunctionCall(TypedDict):
+    name: str
+    arguments: str
+
 
 class Message(TypedDict, total=False):
-    role: Required[Literal["user", "assistant", "function"]]
-    content: Required[str]
+    role: Required[Literal["user", "assistant", "function", "system"]]
+    content: Required[str | None]  # null if there's a function call
+    function_call: FunctionCall  # only exists when role is "function"
     name: str  # only exists when role is "function"
 
 
@@ -34,8 +41,15 @@ class FunctionSchema(TypedDict):
     parameters: Parameters
 
 
+class GPTRequest(TypedDict, total=False):
+    model: Required[str]
+    messages: Required[Sequence[Message]]
+    functions: Sequence[FunctionSchema]
+
+
 class GPTResponse(TypedDict):
-    choices: Sequence[Message]
+    # TODO
+    ...
 
 
 MAX_BACKOFF_TIME = 16
@@ -73,6 +87,57 @@ def _is_non_retriable_error(error: Exception) -> bool:
         raise NotImplementedError(f"Unknown error type: {error}")
 
 
+def serialize(
+    model: str,
+    thread_messages: Sequence[ThreadMessage],
+    functions: Sequence[FunctionSchema] | None = None,
+) -> GPTRequest:
+    """\
+    Convert a sequence of thread messages to the format expected by the OpenAI API.
+    """
+    if model == "gpt-4":
+        model = "gpt-4-0613"
+
+    messages: list[Message] = []
+    for thread_message in thread_messages:
+        contruction: dict[str, Any] = {
+            "role": thread_message["role"],
+            "content": thread_message["content"],
+        }
+        if (
+            # assistant is invoking a function of ours
+            thread_message["role"] == "assistant"
+            and thread_message["function_name"] is not None
+            and thread_message["function_args"] is not None
+        ):
+            contruction["function_call"] = {
+                "name": thread_message["function_name"],
+                "arguments": thread_message["function_args"],
+            }
+        elif thread_message["role"] == "function":
+            # a function was invoked and returned a response
+            contruction["name"] = thread_message["function_name"]
+
+        message = Message(**contruction)
+        messages.append(message)
+
+    gpt_request: GPTRequest = {
+        "model": model,
+        "messages": messages,
+    }
+    if functions is not None:
+        gpt_request["functions"] = functions
+
+    return gpt_request
+
+
+def deserialize(gpt_response: GPTResponse) -> Sequence[ThreadMessage]:
+    """\
+    Convert a GPTResponse to a sequence of thread messages.
+    """
+    raise NotImplementedError("Still need to write this")
+
+
 @backoff.on_exception(
     backoff.expo,
     openai.error.OpenAIError,
@@ -81,7 +146,7 @@ def _is_non_retriable_error(error: Exception) -> bool:
 )
 async def send(
     model: str,
-    messages: Sequence[Message],
+    thread_messages: Sequence[ThreadMessage],
     functions: Sequence[FunctionSchema] | None = None,
 ) -> OpenAIObject:
     """\
@@ -89,13 +154,7 @@ async def send(
 
     https://beta.openai.com/docs/api-reference/create-completion
     """
-    if model == "gpt-4":  # add function calling support
-        model = "gpt-4-0613"
-
-    kwargs: dict[str, Any] = {"model": model, "messages": messages}
-    if functions is not None:
-        kwargs["functions"] = functions
-
-    response = await openai.ChatCompletion.acreate(**kwargs)
-    assert isinstance(response, OpenAIObject)
+    request = serialize(model, thread_messages, functions)
+    response = await openai.ChatCompletion.acreate(**request)
+    assert isinstance(response, OpenAIObject), "this should never fail"
     return response
