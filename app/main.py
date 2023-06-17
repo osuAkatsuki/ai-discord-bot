@@ -133,27 +133,13 @@ async def on_message(message: discord.Message):
         return
 
     # they are in a thread that we are tracking
-    tracked_thread = await threads.fetch_one(message.channel.id)
-    if tracked_thread is None:
+    our_thread = await threads.fetch_one(message.channel.id)
+    if our_thread is None:
         return
 
-    thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
-
-    message_history = [
-        gpt.Message(role=m["role"], content=m["content"])
-        for m in thread_history[-tracked_thread["context_length"] :]
-    ]
-
-    message_history = []
-    initial_setup = tracked_thread.get("initial_setup")
-    if initial_setup is not None:
-        initial_messages = initial_setups.get_initial_setup(initial_setup)
-        if initial_messages is None:
-            await message.channel.send(f"Unknown initial setup: {initial_setup}")
-            return
-
-        for m in reversed(initial_messages):
-            message_history.insert(0, m)
+    our_thread_messages = await thread_messages.fetch_many(
+        thread_id=message.channel.id, page_size=our_thread["context_length"]
+    )
 
     prompt = message.clean_content
     if prompt.startswith(f"{bot.user.mention} "):
@@ -162,27 +148,19 @@ async def on_message(message: discord.Message):
     prompt = f"{message.author.display_name}: {prompt}"
 
     async with message.channel.typing():
-        await thread_messages.create(
+        thread_message = await thread_messages.create(
             message.channel.id,
             prompt,
             role="user",
             tokens_used=0,
         )
-
-        message_history.append({"role": "user", "content": prompt})
+        our_thread_messages.append(thread_message)
 
         functions = openai_functions.get_full_openai_functions_schema()
 
-        print(
-            "sending with history",
-            "\n\n\n\n\n",
-            "\n\n".join(map(str, message_history)),
-            "\n\n\n\n\n\n",
-        )
-
         gpt_response = await gpt.send(
-            tracked_thread["model"],
-            message_history,
+            our_thread["model"],
+            our_thread_messages,
             functions,
         )
         if not gpt_response:
@@ -195,47 +173,65 @@ async def on_message(message: discord.Message):
 
         gpt_choice = gpt_response["choices"][0]
         gpt_message = gpt_choice["message"]
-        message_history.append(gpt_message)
 
         if gpt_choice["finish_reason"] == "stop":
             gpt_response_content = gpt_message["content"]
+            thread_message = await thread_messages.create(
+                message.channel.id,
+                gpt_message["content"],
+                role="assistant",
+                tokens_used=gpt_response["usage"]["total_tokens"],
+            )
+            our_thread_messages.append(thread_message)
 
         elif gpt_choice["finish_reason"] == "function_call":
+            # assistant is invoking a function of ours
             function_name = gpt_message["function_call"]["name"]
-            function_kwargs = json.loads(gpt_message["function_call"]["arguments"])
+            function_args = json.loads(gpt_message["function_call"]["arguments"])
 
             ai_function = openai_functions.ai_functions[function_name]
-            function_response = await ai_function["callback"](**function_kwargs)
+            function_response = await ai_function["callback"](**function_args)
+
+            thread_message = await thread_messages.create(
+                message.channel.id,
+                content=None,
+                role="assistant",
+                tokens_used=gpt_response["usage"]["total_tokens"],
+                function_name=function_name,
+                function_args=function_args,
+            )
+            our_thread_messages.append(thread_message)
 
             # send function response back to gpt for the final response
-            # TODO: could it call another function?
-            #       i think this should support recursive calls
-            message_history.append(
-                {
-                    "role": "function",
-                    "name": function_name,
-                    "content": function_response,
-                }
+            thread_message = await thread_messages.create(
+                message.channel.id,
+                function_response,
+                role="function",
+                tokens_used=0,
+                function_name=function_name,
+                function_args=function_args,
             )
-            gpt_response = await gpt.send(tracked_thread["model"], message_history)
+            our_thread_messages.append(thread_message)
+
+            # TODO: can gpt chain function calls?
+            gpt_response = await gpt.send(our_thread["model"], our_thread_messages)
             gpt_response_content = gpt_response["choices"][0]["message"]["content"]
+
+            thread_message = await thread_messages.create(
+                message.channel.id,
+                gpt_response_content,
+                role="assistant",
+                tokens_used=gpt_response["usage"]["total_tokens"],
+            )
+            our_thread_messages.append(thread_message)
 
         else:
             raise NotImplementedError(
                 f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
             )
 
-        tokens_spent = gpt_response.usage.total_tokens
-
         for chunk in split_message(gpt_response_content, 2000):
             await message.channel.send(chunk)
-
-        await thread_messages.create(
-            message.channel.id,
-            gpt_response_content,
-            role="assistant",
-            tokens_used=tokens_spent,
-        )
 
 
 @command_tree.command(name=command_name("cost"))
@@ -472,6 +468,20 @@ async def ai(
         initial_setup=initial_setup,
         context_length=5,  # messages
     )
+
+    if initial_setup is not None:
+        initial_messages = initial_setups.get_initial_setup(initial_setup)
+        if initial_messages is None:
+            await interaction.followup.send(f"Unknown initial setup: {initial_setup}")
+            return
+
+        for m in initial_messages:
+            await thread_messages.create(
+                thread.id,
+                content=m["content"],
+                role=m["role"],
+                tokens_used=0,
+            )
 
 
 @command_tree.command(name=command_name("transcript"))
