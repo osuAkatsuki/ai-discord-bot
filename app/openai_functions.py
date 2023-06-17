@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import json
 import logging
+import textwrap
 import traceback
 import typing
 from collections.abc import Awaitable
@@ -215,17 +216,22 @@ def json_default_serializer(obj: Any) -> str:
 async def ask_database(
     query: Annotated[
         str,
-        f"""\
-SQL query extracting info to answer the user's question.
-SQL should be written using this database schema:
-{get_db_schema_string()}
-Please return the query that was run, along with the results.
-The results should be returned in plain text, not in JSON.
-If you receive an error, please return it along with your thoughts.\
-""",
+        textwrap.dedent(
+            """\
+            SQL query extracting info to answer the user's question.
+            SQL should be written using this database schema:
+
+            {xml_database_schema}
+
+            The results should be returned in plain text, not in JSON.
+            Data should be presentable to business folks; please format it nicely.
+            """
+        ).format(xml_database_schema=get_db_schema_string()),
     ],
 ) -> str:
-    """Use this function to answer user questions about akatsuki's data. Output should be a fully formed SQL query."""
+    """\
+    Use this function to answer user questions about akatsuki's data.\n
+    Output should be a fully formed SQL query."""
     try:
         result = await state.akatsuki_read_database.fetch_all(query)
         return json.dumps(result, default=json_default_serializer)
