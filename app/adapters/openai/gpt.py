@@ -12,10 +12,6 @@ from app.repositories.thread_messages import ThreadMessage
 
 
 class FunctionCall(TypedDict):
-    # "function_call": {
-    #   "name": "ask_database",
-    #   "arguments": "{\n  \"query\": \"SELECT * FROM users ORDER BY id DESC LIMIT 5\"\n}"
-    # }
     name: str
     arguments: str
 
