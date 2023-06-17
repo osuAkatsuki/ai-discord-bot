@@ -119,6 +119,7 @@ def serialize(
                 "arguments": thread_message["function_args"],
             }
         elif thread_message["role"] == "function":
+            # a function was invoked and returned a response
             contruction["name"] = thread_message["function_name"]
 
         message = Message(**contruction)
