@@ -272,7 +272,7 @@ async def get_weather_for_location(
     response.raise_for_status()
     response_data = response.json()
 
-    degrees_celcius = response_data["hourly"]["temperature_2m"][-1]
+    degrees_celcius = response_data["hourly"]["temperature_2m"][0]
     degrees_fahrenheit = celcius_to_fahrenheit(degrees_celcius)
 
     return f"{degrees_celcius}°C / {degrees_fahrenheit}°F"
