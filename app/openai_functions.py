@@ -128,9 +128,8 @@ def celcius_to_fahrenheit(degrees_celcius: float) -> float:
 
 
 def format_row_to_xml(row: dict[str, Any]):
-    # XXX: we can remove a few columns since we're a read-only connection
+    # NOTE: we only send the columns that will be relevant for a read-only connection
     return f"<row><field>{row['Field']}</field><type>{row['Type']}</type><key>{row['Key']}</key></row>"
-    # return f"<row><field>{row['Field']}</field><type>{row['Type']}</type><null>{row['Null']}</null><key>{row['Key']}</key><default>{row['Default'] or 'NULL'}</default><extra>{row['Extra']}</extra></row>"
 
 
 def format_table_to_xml(table_name: str, rows: list[dict]) -> str:
@@ -142,58 +141,16 @@ def get_db_schema_string() -> str:
     async def inner_async_usage() -> str:
         await state.akatsuki_read_database.connect()
 
-        # TODO: i wish we could pull all tables, but gpt-4-0613 only has a
-        # context window of 8K at the moment. gpt-4-32k-0613 doesn't seem to work.
+        # TODO: figure out why gpt-4-32k-0613 doesn't work
+
+        # and for if we can ever send all tables,
         # table_names = {
         #     col["Tables_in_akatsuki"]
         #     for col in await state.akatsuki_read_database.fetch_all("SHOW TABLES")
-        # } - {"_sqlx_migrations"}
-
-        table_names = {
-            "hw_user",
-            "scores_first",
-            # "anticheat_analyzes",
-            "users_achievements",
-            # "scores_relax",
-            # "scores_ap",
-            # "user_beatmaps",
-            "lastfm_flags",
-            # "aika_users_old",
-            "anticheat_queue",
-            "privileges_groups",
-            # "main_menu_icons",
-            # "faq",
-            # "anticheat_detections",
-            "rap_logs",
-            # "schema_seeds",
-            "achievements",
-            # "user_tourmnt_badges",
-            # "hw_comparison",
-            # "scores_removed_relax",
-            # "anticheat_function_checksums",
-            "users",
-            # "reports",
-            # "tourmnt_badges",
-            # "anticheat_instruction_patterns",
-            "ip_user",
-            "beatmaps",
-            "users_stats",
-            # "badges",
-            # "user_clans",
-            "beatmaps_playcounts",
-            # "ap_stats",
-            # "known_cheat_checksums",
-            # "anticheat_hardware",
-            "users_relationships",
-            # "pp_limits",
-            # "clans",
-            "scores",
-            # "rx_stats",
-            # "user_profile_history",
-        }
+        # }
 
         formatted_tables = []
-        for table_name in table_names:
+        for table_name in settings.AKATSUKI_DB_SCHEMA_TABLES:
             table_description = await state.akatsuki_read_database.fetch_all(
                 f"DESCRIBE {table_name}"
             )

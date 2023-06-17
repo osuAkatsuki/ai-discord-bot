@@ -7,6 +7,10 @@ def read_bool(value: str) -> bool:
     return value.lower() == "true"  # keep it simple
 
 
+def read_list(value: str) -> list[str]:
+    return value.split(",")
+
+
 load_dotenv()
 
 
@@ -51,3 +55,5 @@ DB_POOL_MIN_SIZE = int(os.environ["DB_POOL_MIN_SIZE"])
 DB_POOL_MAX_SIZE = int(os.environ["DB_POOL_MAX_SIZE"])
 
 SERVICE_READINESS_TIMEOUT = int(os.environ["SERVICE_READINESS_TIMEOUT"])
+
+AKATSUKI_DB_SCHEMA_TABLES = read_list(os.environ["AKATSUKI_DB_SCHEMA_TABLES"])
