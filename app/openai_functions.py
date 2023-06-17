@@ -133,11 +133,22 @@ def format_row_to_xml(row: dict[str, Any]):
 
 
 def format_table_to_xml(table_name: str, rows: list[dict]) -> str:
-    formatted_rows = "\n".join(format_row_to_xml(row) for row in rows)
+    """\
+    Format a table's description as an XML string.
+    """
+    formatted_rows = "".join(format_row_to_xml(row) for row in rows)
     return f"<table><name>{table_name}</name><rows>{formatted_rows}</rows></table>"
 
 
-def get_db_schema_string() -> str:
+def format_database_to_xml() -> str:
+    """\
+    Get the database schema as an XML string, one table per line.
+
+    This is used to initialize the database schema in the OpenAI engine.
+    """
+
+    # NOTE: we're hacking a bit here to not have to
+    # implement a secondary (synchronous) database library
     async def inner_async_usage() -> str:
         await state.akatsuki_read_database.connect()
 
@@ -158,7 +169,7 @@ def get_db_schema_string() -> str:
             formatted_tables.append(formatted_table)
 
         await state.akatsuki_read_database.disconnect()
-        return "\n\n".join(formatted_tables)
+        return "".join(formatted_tables)
 
     return asyncio.run(inner_async_usage())
 
@@ -183,7 +194,7 @@ async def ask_database(
             The results should be returned in plain text, not in JSON.
             Data should be presentable to business folks; please format it nicely.
             """
-        ).format(xml_database_schema=get_db_schema_string()),
+        ).format(xml_database_schema=format_database_to_xml()),
     ],
 ) -> str:
     """\
