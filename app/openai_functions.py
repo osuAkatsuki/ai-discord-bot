@@ -228,12 +228,7 @@ If you receive an error, please return it along with your thoughts.\
     """Use this function to answer user questions about akatsuki's data. Output should be a fully formed SQL query."""
     try:
         result = await state.akatsuki_read_database.fetch_all(query)
-        return json.dumps(
-            result,
-            indent=4,
-            sort_keys=True,
-            default=json_default_serializer,
-        )
+        return json.dumps(result, default=json_default_serializer)
     except:
         return str(traceback.format_exc())
 
