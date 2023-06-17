@@ -175,6 +175,7 @@ async def on_message(message: discord.Message):
         gpt_message = gpt_choice["message"]
 
         if gpt_choice["finish_reason"] == "stop":
+            # assistant is replying to our message history
             gpt_response_content = gpt_message["content"]
             thread_message = await thread_messages.create(
                 message.channel.id,
