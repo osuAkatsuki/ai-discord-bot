@@ -1,15 +1,9 @@
-import asyncio
 import itertools
-import json
 import logging
-import textwrap
-import traceback
 import typing
 from collections.abc import Awaitable
 from collections.abc import Callable
-from datetime import datetime
 from typing import Annotated
-from typing import Any
 from typing import TypedDict
 
 from app import settings
@@ -127,86 +121,6 @@ def celcius_to_fahrenheit(degrees_celcius: float) -> float:
     return (degrees_celcius * 9 / 5) + 32.0
 
 
-def format_row_to_xml(row: dict[str, Any]):
-    # NOTE: we only send the columns that will be relevant for a read-only connection
-    return f"<row><field>{row['Field']}</field><type>{row['Type']}</type><key>{row['Key']}</key></row>"
-
-
-def format_table_to_xml(table_name: str, rows: list[dict]) -> str:
-    """\
-    Format a table's description as an XML string.
-    """
-    formatted_rows = "".join(format_row_to_xml(row) for row in rows)
-    return f"<table><name>{table_name}</name><rows>{formatted_rows}</rows></table>"
-
-
-def format_database_to_xml() -> str:
-    """\
-    Get the database schema as an XML string, one table per line.
-
-    This is used to initialize the database schema in the OpenAI engine.
-    """
-
-    # NOTE: we're hacking a bit here to not have to
-    # implement a secondary (synchronous) database library
-    async def inner_async_usage() -> str:
-        await state.akatsuki_read_database.connect()
-
-        # TODO: figure out why gpt-4-32k-0613 doesn't work
-
-        # and for if we can ever send all tables,
-        # table_names = {
-        #     col["Tables_in_akatsuki"]
-        #     for col in await state.akatsuki_read_database.fetch_all("SHOW TABLES")
-        # }
-
-        formatted_tables = []
-        for table_name in settings.AKATSUKI_DB_SCHEMA_TABLES:
-            table_description = await state.akatsuki_read_database.fetch_all(
-                f"DESCRIBE {table_name}"
-            )
-            formatted_table = format_table_to_xml(table_name, table_description)
-            formatted_tables.append(formatted_table)
-
-        await state.akatsuki_read_database.disconnect()
-        return "".join(formatted_tables)
-
-    return asyncio.run(inner_async_usage())
-
-
-def json_default_serializer(obj: Any) -> str:
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    return str(obj)
-
-
-@ai_function
-async def ask_database(
-    query: Annotated[
-        str,
-        textwrap.dedent(
-            """\
-            SQL query extracting info to answer the user's question.
-            SQL should be written using this database schema:
-
-            {xml_database_schema}
-
-            The results should be returned in plain text, not in JSON.
-            Data should be presentable to business folks; please format it nicely.
-            """
-        ).format(xml_database_schema=format_database_to_xml()),
-    ],
-) -> str:
-    """\
-    Use this function to answer user questions about akatsuki's data.\n
-    Output should be a fully formed SQL query."""
-    try:
-        result = await state.akatsuki_read_database.fetch_all(query)
-        return json.dumps(result, default=json_default_serializer)
-    except:
-        return str(traceback.format_exc())
-
-
 @ai_function
 async def get_weather_for_location(
     location: Annotated[str, "The city name for which to fetch the weather"],
@@ -241,7 +155,7 @@ async def get_weather_for_location(
     response.raise_for_status()
     response_data = response.json()
 
-    degrees_celcius = response_data["hourly"]["temperature_2m"][0]
+    degrees_celcius = response_data["hourly"]["temperature_2m"][-1]
     degrees_fahrenheit = celcius_to_fahrenheit(degrees_celcius)
 
     return f"{degrees_celcius}°C / {degrees_fahrenheit}°F"
