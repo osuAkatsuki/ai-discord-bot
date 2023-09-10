@@ -16,8 +16,8 @@ sys.path.append(srv_root)
 from app import openai_functions
 from app import openai_pricing
 from app import settings
-from app import initial_setups
 from app import state
+from app.adapters import database
 from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
@@ -30,12 +30,35 @@ MAX_CONTENT_LENGTH = 100
 # haven't been able to find anything reliable in discord.py for them
 class Bot(discord.Client):
     async def start(self, *args, **kwargs) -> None:
+        state.read_database = database.Database(
+            database.dsn(
+                scheme="postgresql",
+                user=settings.READ_DB_USER,
+                password=settings.READ_DB_PASS,
+                host=settings.READ_DB_HOST,
+                port=settings.READ_DB_PORT,
+                database=settings.READ_DB_NAME,
+            ),
+            db_ssl=settings.READ_DB_USE_SSL,
+            min_pool_size=settings.DB_POOL_MIN_SIZE,
+            max_pool_size=settings.DB_POOL_MAX_SIZE,
+        )
         await state.read_database.connect()
-        await state.write_database.connect()
 
-        # also make a read-only connection to akatsuki's
-        # mysql database for ai-assisted analysis
-        await state.akatsuki_read_database.connect()
+        state.write_database = database.Database(
+            database.dsn(
+                scheme="postgresql",
+                user=settings.WRITE_DB_USER,
+                password=settings.WRITE_DB_PASS,
+                host=settings.WRITE_DB_HOST,
+                port=settings.WRITE_DB_PORT,
+                database=settings.WRITE_DB_NAME,
+            ),
+            db_ssl=settings.WRITE_DB_USE_SSL,
+            min_pool_size=settings.DB_POOL_MIN_SIZE,
+            max_pool_size=settings.DB_POOL_MAX_SIZE,
+        )
+        await state.write_database.connect()
 
         state.http_client = httpx.AsyncClient()
 
@@ -44,8 +67,6 @@ class Bot(discord.Client):
     async def close(self, *args: Any, **kwargs: Any) -> None:
         await state.read_database.disconnect()
         await state.write_database.disconnect()
-
-        await state.akatsuki_read_database.disconnect()
 
         await state.http_client.aclose()
 
@@ -133,13 +154,9 @@ async def on_message(message: discord.Message):
         return
 
     # they are in a thread that we are tracking
-    our_thread = await threads.fetch_one(message.channel.id)
-    if our_thread is None:
+    tracked_thread = await threads.fetch_one(message.channel.id)
+    if tracked_thread is None:
         return
-
-    our_thread_messages = await thread_messages.fetch_many(
-        thread_id=message.channel.id, page_size=our_thread["context_length"]
-    )
 
     prompt = message.clean_content
     if prompt.startswith(f"{bot.user.mention} "):
@@ -148,19 +165,25 @@ async def on_message(message: discord.Message):
     prompt = f"{message.author.display_name}: {prompt}"
 
     async with message.channel.typing():
-        thread_message = await thread_messages.create(
+        await thread_messages.create(
             message.channel.id,
             prompt,
             role="user",
             tokens_used=0,
         )
-        our_thread_messages.append(thread_message)
+
+        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
+
+        message_history = [
+            gpt.Message(role=m["role"], content=m["content"])
+            for m in thread_history[-tracked_thread["context_length"] :]
+        ]
+        message_history.append({"role": "user", "content": prompt})
 
         functions = openai_functions.get_full_openai_functions_schema()
-
         gpt_response = await gpt.send(
-            our_thread["model"],
-            our_thread_messages,
+            tracked_thread["model"],
+            message_history,
             functions,
         )
         if not gpt_response:
@@ -173,67 +196,47 @@ async def on_message(message: discord.Message):
 
         gpt_choice = gpt_response["choices"][0]
         gpt_message = gpt_choice["message"]
+        message_history.append(gpt_message)
 
-        if gpt_choice["finish_reason"] in ("stop", "length"):
-            # assistant is replying to our message history
+        if gpt_choice["finish_reason"] == "stop":
             gpt_response_content = gpt_message["content"]
-            thread_message = await thread_messages.create(
-                message.channel.id,
-                gpt_message["content"],
-                role="assistant",
-                tokens_used=gpt_response["usage"]["total_tokens"],
-            )
-            our_thread_messages.append(thread_message)
 
         elif gpt_choice["finish_reason"] == "function_call":
-            # assistant is invoking a function of ours
             function_name = gpt_message["function_call"]["name"]
-            function_args = json.loads(gpt_message["function_call"]["arguments"])
+            function_kwargs = json.loads(gpt_message["function_call"]["arguments"])
 
             ai_function = openai_functions.ai_functions[function_name]
-            function_response = await ai_function["callback"](**function_args)
-
-            thread_message = await thread_messages.create(
-                message.channel.id,
-                content=None,
-                role="assistant",
-                tokens_used=gpt_response["usage"]["total_tokens"],
-                function_name=function_name,
-                function_args=function_args,
-            )
-            our_thread_messages.append(thread_message)
+            function_response = await ai_function["callback"](**function_kwargs)
 
             # send function response back to gpt for the final response
-            thread_message = await thread_messages.create(
-                message.channel.id,
-                function_response,
-                role="function",
-                tokens_used=0,
-                function_name=function_name,
-                function_args=function_args,
+            # TODO: could it call another function?
+            #       i think this should support recursive calls
+            message_history.append(
+                {
+                    "role": "function",
+                    "name": function_name,
+                    "content": function_response,
+                }
             )
-            our_thread_messages.append(thread_message)
-
-            # TODO: can gpt chain function calls?
-            gpt_response = await gpt.send(our_thread["model"], our_thread_messages)
+            gpt_response = await gpt.send(tracked_thread["model"], message_history)
             gpt_response_content = gpt_response["choices"][0]["message"]["content"]
 
-            thread_message = await thread_messages.create(
-                message.channel.id,
-                gpt_response_content,
-                role="assistant",
-                tokens_used=gpt_response["usage"]["total_tokens"],
-            )
-            our_thread_messages.append(thread_message)
-
         else:
-            print(gpt_response)
             raise NotImplementedError(
                 f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
             )
 
+        tokens_spent = gpt_response.usage.total_tokens
+
         for chunk in split_message(gpt_response_content, 2000):
             await message.channel.send(chunk)
+
+        await thread_messages.create(
+            message.channel.id,
+            gpt_response_content,
+            role="assistant",
+            tokens_used=tokens_spent,
+        )
 
 
 @command_tree.command(name=command_name("cost"))
@@ -425,7 +428,6 @@ async def summarize(
 async def ai(
     interaction: discord.Interaction,
     model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
-    initial_setup: Literal["akatsuki-db"] = "akatsuki-db",
 ):
     if (
         interaction.channel is not None
@@ -467,23 +469,8 @@ async def ai(
         thread.id,
         initiator_user_id=interaction.user.id,
         model=model,
-        initial_setup=initial_setup,
         context_length=5,  # messages
     )
-
-    if initial_setup is not None:
-        initial_messages = initial_setups.get_initial_setup(initial_setup)
-        if initial_messages is None:
-            await interaction.followup.send(f"Unknown initial setup: {initial_setup}")
-            return
-
-        for m in initial_messages:
-            await thread_messages.create(
-                thread.id,
-                content=m["content"],
-                role=m["role"],
-                tokens_used=0,
-            )
 
 
 @command_tree.command(name=command_name("transcript"))
