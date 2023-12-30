@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - k8s-deploy
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
