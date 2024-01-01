@@ -2,7 +2,7 @@ apps:
   - name: ai-discord-bot
     environment: production
     codebase: ai-discord-bot
-    replicaCount: 2
+    replicaCount: 1
     container:
       image:
         repository: osuakatsuki/ai-discord-bot
