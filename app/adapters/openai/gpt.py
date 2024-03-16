@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
 from typing import Literal
@@ -87,7 +86,7 @@ async def send(
     """\
     Send a message to the OpenAI API, as a given model.
 
-    https://beta.openai.com/docs/api-reference/create-completion
+    https://platform.openai.com/docs/api-reference/chat
     """
     if model == "gpt-4":  # add function calling support
         model = "gpt-4-0613"

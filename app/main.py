@@ -100,10 +100,11 @@ DISCORD_USER_ID_WHITELIST = {
 }
 
 
-def command_name(name: str) -> str:
+def command_name(command_name: str) -> str:
+    """Prepends command names with "dev" in test env(s) to avoid overlap."""
     if settings.APP_ENV != "production":
-        name = f"dev{name}"  # e.g. "/ai" becomes "/devai" in test envs
-    return name
+        command_name = f"dev{command_name}"
+    return command_name
 
 
 @bot.event
@@ -395,10 +396,10 @@ async def summarize(
         if not content:  # ignore empty messages (e.g. only images)
             continue
 
-        author = message.author.name
+        author_name = message.author.name
 
         if tracking:
-            messages.append({"role": "user", "content": f"{author}: {content}"})
+            messages.append({"role": "user", "content": f"{author_name}: {content}"})
         elif end_message_id is not None:
             if message.id == end_message_id:
                 tracking = True
