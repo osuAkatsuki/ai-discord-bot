@@ -162,7 +162,7 @@ async def on_message(message: discord.Message):
     if prompt.startswith(f"{bot.user.mention} "):
         prompt = prompt.removeprefix(f"{bot.user.mention} ")
 
-    prompt = f"{message.author.display_name}: {prompt}"
+    prompt = f"{message.author.name}: {prompt}"
 
     async with message.channel.typing():
         await thread_messages.create(
@@ -395,7 +395,7 @@ async def summarize(
         if not content:  # ignore empty messages (e.g. only images)
             continue
 
-        author = message.author.display_name
+        author = message.author.name
 
         if tracking:
             messages.append({"role": "user", "content": f"{author}: {content}"})
