@@ -4,6 +4,7 @@ from typing import cast
 from typing import TypedDict
 
 from app import state
+from app.adapters.openai.gpt import OpenAIModel
 
 READ_PARAMS = """\
     thread_id,
@@ -17,15 +18,20 @@ READ_PARAMS = """\
 class Thread(TypedDict):
     thread_id: int
     initiator_user_id: int
-    model: str
+    model: OpenAIModel
     context_length: int
     created_at: datetime
+
+
+def deserialize(rec: dict[str, Any]) -> dict[str, Any]:
+    rec["model"] = OpenAIModel(rec["model"])
+    return rec
 
 
 async def create(
     thread_id: int,
     initiator_user_id: int,
-    model: str,
+    model: OpenAIModel,
     context_length: int,
 ) -> Thread:
     query = f"""\
@@ -36,14 +42,15 @@ async def create(
     values: dict[str, Any] = {
         "thread_id": thread_id,
         "initiator_user_id": initiator_user_id,
-        "model": model,
+        "model": model.value,
         "context_length": context_length,
     }
     rec = await state.write_database.fetch_one(query, values)
-    return cast(Thread, rec)
+    assert rec is not None
+    return cast(Thread, deserialize(rec))
 
 
-async def fetch_one(thread_id: int) -> Thread:
+async def fetch_one(thread_id: int) -> Thread | None:
     query = f"""\
         SELECT {READ_PARAMS}
         FROM threads
@@ -51,12 +58,12 @@ async def fetch_one(thread_id: int) -> Thread:
     """
     values: dict[str, Any] = {"thread_id": thread_id}
     rec = await state.read_database.fetch_one(query, values)
-    return cast(Thread, rec)
+    return cast(Thread, deserialize(rec)) if rec is not None else None
 
 
 async def fetch_many(
     initiator_user_id: int | None = None,
-    model: str | None = None,
+    model: OpenAIModel | None = None,
     context_length: int | None = None,
     page: int | None = None,
     page_size: int | None = None,
@@ -70,7 +77,7 @@ async def fetch_many(
     """
     values: dict[str, Any] = {
         "initiator_user_id": initiator_user_id,
-        "model": model,
+        "model": model.value if model else None,
         "context_length": context_length,
     }
     if page is not None and page_size is not None:
@@ -78,13 +85,13 @@ async def fetch_many(
         values["page_size"] = page_size
         values["offset"] = (page - 1) * page_size
     recs = await state.read_database.fetch_all(query, values)
-    return cast(list[Thread], recs)
+    return cast(list[Thread], [deserialize(r) for r in recs])
 
 
 async def partial_update(
     thread_id: int,
     initiator_user_id: int | None = None,
-    model: str | None = None,
+    model: OpenAIModel | None = None,
     context_length: int | None = None,
 ) -> Thread | None:
     query = f"""\
@@ -98,8 +105,8 @@ async def partial_update(
     values: dict[str, Any] = {
         "thread_id": thread_id,
         "initiator_user_id": initiator_user_id,
-        "model": model,
+        "model": model.value if model else None,
         "context_length": context_length,
     }
     rec = await state.write_database.fetch_one(query, values)
-    return cast(Thread, rec) if rec is not None else None
+    return cast(Thread, deserialize(rec)) if rec is not None else None

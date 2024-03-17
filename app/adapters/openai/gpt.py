@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Any
 from typing import Literal
 from typing import Required
@@ -7,6 +8,26 @@ from typing import TypedDict
 import backoff
 import openai.error
 from openai.openai_object import OpenAIObject
+
+
+class OpenAIModel(StrEnum):
+    GPT_4_0125_PREVIEW = "gpt-4-0125-preview"
+    GPT_4_1106_PREVIEW = "gpt-4-1106-preview"
+    GPT_4_1106_VISION_PREVIEW = "gpt-4-1106-vision-preview"
+
+    GPT_4 = "gpt-4"
+    GPT_4_32K = "gpt-4-32k"
+
+    GPT_3_5_TURBO_0125 = "gpt-3.5-turbo-0125"
+    GPT_3_5_TURBO_INSTRUCT = "gpt-3.5-turbo-instruct"
+    GPT_3_5_TURBO_1106 = "gpt-3.5-turbo-1106"
+    GPT_3_5_TURBO_0613 = "gpt-3.5-turbo-0613"
+    GPT_3_5_TURBO_16K_0613 = "gpt-3.5-turbo-16k-0613"
+    GPT_3_5_TURBO_0301 = "gpt-3.5-turbo-0301"
+
+    # pointers to the latest model from a given class
+    GPT_4_TURBO_PREVIEW = "gpt-4-turbo-preview"
+    GPT_3_5_TURBO = "gpt-3.5-turbo"
 
 
 class Message(TypedDict, total=False):
@@ -79,7 +100,7 @@ def _is_non_retriable_error(error: Exception) -> bool:
     giveup=_is_non_retriable_error,
 )
 async def send(
-    model: str,
+    model: OpenAIModel,
     messages: Sequence[Message],
     functions: Sequence[FunctionSchema] | None = None,
 ) -> OpenAIObject:
@@ -88,10 +109,7 @@ async def send(
 
     https://platform.openai.com/docs/api-reference/chat
     """
-    if model == "gpt-4":  # add function calling support
-        model = "gpt-4-0613"
-
-    kwargs: dict[str, Any] = {"model": model, "messages": messages}
+    kwargs: dict[str, Any] = {"model": model.value, "messages": messages}
     if functions is not None:
         kwargs["functions"] = functions
 

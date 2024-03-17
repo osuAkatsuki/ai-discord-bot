@@ -285,7 +285,7 @@ async def cost(interaction: discord.Interaction):
 @command_tree.command(name=command_name("model"))
 async def model(
     interaction: discord.Interaction,
-    model: Literal["gpt-4", "gpt-3.5-turbo"],
+    model: gpt.OpenAIModel,
 ):
     if not isinstance(interaction.channel, discord.Thread):
         return
@@ -427,7 +427,7 @@ async def summarize(
         }
     )
 
-    gpt_response = await gpt.send("gpt-4", messages)
+    gpt_response = await gpt.send(gpt.OpenAIModel.GPT_4_TURBO_PREVIEW, messages)
 
     gpt_response_content = gpt_response.choices[0].message.content
     # tokens_spent = gpt_response.usage.total_tokens
@@ -439,7 +439,7 @@ async def summarize(
 @command_tree.command(name=command_name("ai"))
 async def ai(
     interaction: discord.Interaction,
-    model: Literal["gpt-4", "gpt-3.5-turbo"] = "gpt-4",
+    model: gpt.OpenAIModel = gpt.OpenAIModel.GPT_4_TURBO_PREVIEW,
 ):
     if (
         interaction.channel is not None
