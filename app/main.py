@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import io
 import json
+import logging
 import os.path
 import sys
+from collections import defaultdict
+from datetime import datetime
+from datetime import timedelta
 from typing import Any
 from typing import Literal
 
@@ -22,6 +26,8 @@ from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
 
+
+LOGGER = logging.getLogger(__name__)
 
 MAX_CONTENT_LENGTH = 100
 
@@ -245,9 +251,6 @@ async def on_message(message: discord.Message):
 
 @command_tree.command(name=command_name("cost"))
 async def cost(interaction: discord.Interaction):
-    if not isinstance(interaction.channel, discord.Thread):
-        return
-
     if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
@@ -257,49 +260,60 @@ async def cost(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-    thread = await threads.fetch_one(interaction.channel.id)
-    if thread is None:
-        await interaction.followup.send(
-            "This thread is not tracked by the bot.",
-            ephemeral=True,
-        )
-        return
+    filters: dict[str, Any] = {}
+    if isinstance(interaction.channel, discord.Thread):
+        filters["thread_id"] = interaction.channel.id
+    else:
+        filters["created_at_gte"] = datetime.now() - timedelta(days=30)
 
-    messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
+    messages = await thread_messages.fetch_many(**filters)
+    threads_cache: dict[int, threads.Thread] = {}
 
-    per_user_tokens: dict[int, dict[Literal["input", "output"], int]] = {}
-    per_user_message_count: dict[int, int] = {}
+    per_user_per_model_input_tokens: dict[
+        int, dict[gpt.OpenAIModel, int]
+    ] = defaultdict(lambda: defaultdict(int))
     for message in messages:
-        user_id = message["discord_user_id"]
-        user_tokens = per_user_tokens.get(user_id, {"input": 0, "output": 0})
-        if message["role"] == "user":
-            user_tokens["input"] += message["tokens_used"]
-        else:
-            user_tokens["output"] += message["tokens_used"]
-        per_user_tokens[user_id] = user_tokens
-        per_user_message_count[user_id] = per_user_message_count.get(user_id, 0) + 1
+        if message["role"] != "user":
+            continue
 
-    per_user_cost: dict[int, float] = {}
-    for user_id, tokens in per_user_tokens.items():
-        user_cost = openai_pricing.tokens_to_dollars(
-            thread["model"],
-            input_tokens=tokens["input"],
-            output_tokens=tokens["output"],
-        )
-        per_user_cost[user_id] = user_cost
+        thread_id = message["thread_id"]
+        thread = threads_cache.get(thread_id)
+        if thread is None:
+            thread = await threads.fetch_one(thread_id)
+            if thread is None:
+                LOGGER.warning(
+                    "Thread %s not found",
+                    thread_id,
+                    extra={"thread_id": thread_id},
+                )
+                continue
+            threads_cache[thread_id] = thread
+
+        user_id = message["discord_user_id"]
+        per_model_input_tokens = per_user_per_model_input_tokens[user_id]
+        per_model_input_tokens[thread["model"]] += message["tokens_used"]
+
+    per_user_cost: dict[int, float] = defaultdict(float)
+    for user_id, per_model_tokens in per_user_per_model_input_tokens.items():
+        for model, input_tokens in per_model_tokens.items():
+            user_cost = per_user_cost[user_id]
+            user_cost += openai_pricing.tokens_to_dollars(
+                model, input_tokens, output_tokens=0
+            )
+            per_user_cost[user_id] = user_cost
 
     response_cost = sum(per_user_cost.values())
 
     message_chunks = [
-        f"**Thread Cost Breakdown**",
-        f"**---------------------**",
+        f"**Cost Breakdown**",
+        f"**--------------**",
+        "",
+        f"Filters: {list(filters)}",
+        "",
     ]
-    for user_id, tokens in per_user_tokens.items():
-        user_cost = per_user_cost[user_id]
-        user_message_count = per_user_message_count[user_id]
-        message_chunks.append(
-            f"<@{user_id}>: ${user_cost:.5f} ({tokens['input']} input tokens) ({tokens['output']} output tokens) over {user_message_count} messages"
-        )
+    for user_id, cost in per_user_cost.items():
+        user = await bot.fetch_user(user_id)
+        message_chunks.append(f"{user.name}: ${cost:.5f}")
 
     message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
 

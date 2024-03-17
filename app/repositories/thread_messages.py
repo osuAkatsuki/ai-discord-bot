@@ -65,6 +65,7 @@ async def fetch_many(
     thread_id: int | None = None,
     discord_user_id: int | None = None,
     role: Literal["user", "assistant"] | None = None,
+    created_at_gte: datetime | None = None,
     page: int | None = None,
     page_size: int | None = None,
 ) -> list[ThreadMessage]:
@@ -80,6 +81,9 @@ async def fetch_many(
         "discord_user_id": discord_user_id,
         "role": role,
     }
+    if created_at_gte is not None:
+        query += "AND created_at >= :created_at_gte"
+        values["created_at_gte"] = created_at_gte
     if page is not None and page_size is not None:
         query += "LIMIT :page_size OFFSET :offset"
         values["page_size"] = page_size
