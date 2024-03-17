@@ -8,7 +8,6 @@ from collections import defaultdict
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
-from typing import Literal
 
 import discord.abc
 import httpx
@@ -249,26 +248,14 @@ async def on_message(message: discord.Message):
         )
 
 
-@command_tree.command(name=command_name("cost"))
-async def cost(interaction: discord.Interaction):
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
-        await interaction.response.send_message(
-            "You are not allowed to use this command",
-            ephemeral=True,
-        )
-        return
-
-    await interaction.response.defer()
-
-    filters: dict[str, Any] = {}
-    if isinstance(interaction.channel, discord.Thread):
-        filters["thread_id"] = interaction.channel.id
-    else:
-        filters["created_at_gte"] = datetime.now() - timedelta(days=30)
-
-    messages = await thread_messages.fetch_many(**filters)
+async def _calculate_per_user_costs(
+    thread_id: int | None = None, created_at_gte: datetime | None = None
+) -> dict[int, float]:
+    messages = await thread_messages.fetch_many(
+        thread_id=thread_id,
+        created_at_gte=created_at_gte,
+    )
     threads_cache: dict[int, threads.Thread] = {}
-
     per_user_per_model_input_tokens: dict[
         int, dict[gpt.OpenAIModel, int]
     ] = defaultdict(lambda: defaultdict(int))
@@ -302,19 +289,71 @@ async def cost(interaction: discord.Interaction):
             )
             per_user_cost[user_id] = user_cost
 
+    return per_user_cost
+
+
+@command_tree.command(name=command_name("monthlycost"))
+async def monthlycost(interaction: discord.Interaction):
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    per_user_cost = await _calculate_per_user_costs(
+        created_at_gte=datetime.now() - timedelta(days=30)
+    )
     response_cost = sum(per_user_cost.values())
 
     message_chunks = [
-        f"**Cost Breakdown**",
+        f"**Monthly Cost Breakdown**",
         f"**--------------**",
-        "",
-        f"Filters: {list(filters)}",
         "",
     ]
     for user_id, cost in per_user_cost.items():
         user = await bot.fetch_user(user_id)
-        message_chunks.append(f"{user.name}: ${cost:.5f}")
+        message_chunks.append(f"{user.mention}: ${cost:.5f}")
 
+    message_chunks.append("")
+    message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
+
+    await interaction.followup.send("\n".join(message_chunks))
+
+
+@command_tree.command(name=command_name("threadcost"))
+async def threadcost(interaction: discord.Interaction):
+    if not isinstance(interaction.channel, discord.Thread):
+        await interaction.response.send_message(
+            "This command can only be used in a thread",
+            ephemeral=True,
+        )
+        return
+
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    per_user_cost = await _calculate_per_user_costs(thread_id=interaction.channel.id)
+    response_cost = sum(per_user_cost.values())
+
+    message_chunks = [
+        f"**Thread Cost Breakdown**",
+        f"**--------------**",
+        "",
+    ]
+    for user_id, cost in per_user_cost.items():
+        user = await bot.fetch_user(user_id)
+        message_chunks.append(f"{user.mention}: ${cost:.5f}")
+
+    message_chunks.append("")
     message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
 
     await interaction.followup.send("\n".join(message_chunks))
