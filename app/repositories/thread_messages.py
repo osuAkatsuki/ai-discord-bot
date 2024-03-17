@@ -8,6 +8,7 @@ from app import state
 
 READ_PARAMS = """\
     thread_message_id,
+    thread_id,
     content,
     discord_user_id,
     role,
