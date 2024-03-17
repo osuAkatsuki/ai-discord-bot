@@ -25,7 +25,7 @@ class OpenAIModel(StrEnum):
     GPT_3_5_TURBO_16K_0613 = "gpt-3.5-turbo-16k-0613"
     GPT_3_5_TURBO_0301 = "gpt-3.5-turbo-0301"
 
-    # pointers to the newest models
+    # pointers to the latest model from a given class
     GPT_4_TURBO_PREVIEW = "gpt-4-turbo-preview"
     GPT_3_5_TURBO = "gpt-3.5-turbo"
 
