@@ -310,7 +310,7 @@ async def monthlycost(interaction: discord.Interaction):
 
     message_chunks = [
         f"**Monthly Cost Breakdown**",
-        f"**--------------**",
+        f"**----------------------**",
         "",
     ]
     for user_id, cost in per_user_cost.items():
@@ -346,7 +346,7 @@ async def threadcost(interaction: discord.Interaction):
 
     message_chunks = [
         f"**Thread Cost Breakdown**",
-        f"**--------------**",
+        f"**---------------------**",
         "",
     ]
     for user_id, cost in per_user_cost.items():
