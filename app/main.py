@@ -229,6 +229,7 @@ async def on_message(message: discord.Message):
         await thread_messages.create(
             message.channel.id,
             prompt,
+            discord_user_id=message.author.id,
             role="user",
             tokens_used=input_tokens,
         )
@@ -236,6 +237,7 @@ async def on_message(message: discord.Message):
         await thread_messages.create(
             message.channel.id,
             gpt_response_content,
+            discord_user_id=bot.user.id,
             role="assistant",
             tokens_used=output_tokens,
         )
@@ -265,21 +267,52 @@ async def cost(interaction: discord.Interaction):
 
     # TODO: display cost per user
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
-    input_tokens = 0
-    output_tokens = 0
-    for m in messages:
-        if m["role"] == "user":
-            input_tokens += m["tokens_used"]
-        elif m["role"] == "assistant":
-            output_tokens += m["tokens_used"]
 
-    response_cost = openai_pricing.tokens_to_dollars(
-        thread["model"], input_tokens, output_tokens
-    )
+    """
+    Thread Cost Breakdown
+    ---------------------
 
-    await interaction.followup.send(
-        f"The running total of this thread is ${response_cost:.5f} ({input_tokens} input tokens) ({output_tokens} output tokens) over {len(messages)} messages",
-    )
+    @cmyui: $4.32 (182 input tokens) (442 output tokens) over 12 messages
+    @flame: $3.12 (132 input tokens) (342 output tokens) over 8 messages
+    """
+
+    per_user_tokens: dict[int, dict[Literal["input", "output"], int]] = {}
+    per_user_message_count: dict[int, int] = {}
+    for message in messages:
+        user_id = message["discord_user_id"]
+        user_tokens = per_user_tokens.get(user_id, {"input": 0, "output": 0})
+        if message["role"] == "user":
+            user_tokens["input"] += message["tokens_used"]
+        else:
+            user_tokens["output"] += message["tokens_used"]
+        per_user_tokens[user_id] = user_tokens
+        per_user_message_count[user_id] = per_user_message_count.get(user_id, 0) + 1
+
+    per_user_cost: dict[int, float] = {}
+    for user_id, tokens in per_user_tokens.items():
+        user_cost = openai_pricing.tokens_to_dollars(
+            thread["model"],
+            input_tokens=tokens["input"],
+            output_tokens=tokens["output"],
+        )
+        per_user_cost[user_id] = user_cost
+
+    response_cost = sum(per_user_cost.values())
+
+    message_chunks = [
+        f"**Thread Cost Breakdown**",
+        f"**---------------------**",
+    ]
+    for user_id, tokens in per_user_tokens.items():
+        user_cost = per_user_cost[user_id]
+        user_message_count = per_user_message_count[user_id]
+        message_chunks.append(
+            f"<@{user_id}>: ${user_cost:.5f} ({tokens['input']} input tokens) ({tokens['output']} output tokens) over {user_message_count} messages"
+        )
+
+    message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
+
+    await interaction.followup.send("\n".join(message_chunks))
 
 
 @command_tree.command(name=command_name("model"))

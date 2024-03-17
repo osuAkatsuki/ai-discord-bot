@@ -9,6 +9,7 @@ from app import state
 READ_PARAMS = """\
     thread_message_id,
     content,
+    discord_user_id,
     role,
     tokens_used,
     created_at
@@ -19,6 +20,7 @@ class ThreadMessage(TypedDict):
     thread_message_id: int
     thread_id: int
     content: str
+    discord_user_id: int
     role: Literal["user", "assistant"]
     tokens_used: int
     created_at: datetime
@@ -27,17 +29,19 @@ class ThreadMessage(TypedDict):
 async def create(
     thread_id: int,
     content: str,
+    discord_user_id: int,
     role: Literal["user", "assistant"],
     tokens_used: int,
 ) -> ThreadMessage:
     query = f"""\
-        INSERT INTO thread_messages (thread_id, content, role, tokens_used)
-        VALUES (:thread_id, :content, :role, :tokens_used)
+        INSERT INTO thread_messages (thread_id, content, discord_user_id, role, tokens_used)
+        VALUES (:thread_id, :content, :discord_user_id, :role, :tokens_used)
         RETURNING {READ_PARAMS}
     """
     values: dict[str, Any] = {
         "thread_id": thread_id,
         "content": content,
+        "discord_user_id": discord_user_id,
         "role": role,
         "tokens_used": tokens_used,
     }
@@ -58,6 +62,7 @@ async def fetch_one(thread_message_id: int) -> ThreadMessage:
 
 async def fetch_many(
     thread_id: int | None = None,
+    discord_user_id: int | None = None,
     role: Literal["user", "assistant"] | None = None,
     page: int | None = None,
     page_size: int | None = None,
@@ -66,9 +71,14 @@ async def fetch_many(
         SELECT {READ_PARAMS}
         FROM thread_messages
         WHERE thread_id = COALESCE(:thread_id, thread_id)
+        AND discord_user_id = COALESCE(:discord_user_id, discord_user_id)
         AND role = COALESCE(:role, role)
     """
-    values: dict[str, Any] = {"thread_id": thread_id, "role": role}
+    values: dict[str, Any] = {
+        "thread_id": thread_id,
+        "discord_user_id": discord_user_id,
+        "role": role,
+    }
     if page is not None and page_size is not None:
         query += "LIMIT :page_size OFFSET :offset"
         values["page_size"] = page_size
