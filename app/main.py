@@ -166,13 +166,6 @@ async def on_message(message: discord.Message):
     prompt = f"{message.author.name}: {prompt}"
 
     async with message.channel.typing():
-        await thread_messages.create(
-            message.channel.id,
-            prompt,
-            role="user",
-            tokens_used=0,
-        )
-
         thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
         message_history = [
@@ -227,16 +220,24 @@ async def on_message(message: discord.Message):
                 f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
             )
 
-        tokens_spent = gpt_response.usage.total_tokens
+        input_tokens = gpt_response.usage.prompt_tokens
+        output_tokens = gpt_response.usage.completion_tokens
 
         for chunk in split_message(gpt_response_content, 2000):
             await message.channel.send(chunk)
 
         await thread_messages.create(
             message.channel.id,
+            prompt,
+            role="user",
+            tokens_used=input_tokens,
+        )
+
+        await thread_messages.create(
+            message.channel.id,
             gpt_response_content,
             role="assistant",
-            tokens_used=tokens_spent,
+            tokens_used=output_tokens,
         )
 
 
@@ -264,11 +265,20 @@ async def cost(interaction: discord.Interaction):
 
     # TODO: display cost per user
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
-    tokens_used = sum(m["tokens_used"] for m in messages)
-    response_cost = openai_pricing.tokens_to_dollars(thread["model"], tokens_used)
+    input_tokens = 0
+    output_tokens = 0
+    for m in messages:
+        if m["role"] == "user":
+            input_tokens += m["tokens_used"]
+        elif m["role"] == "assistant":
+            output_tokens += m["tokens_used"]
+
+    response_cost = openai_pricing.tokens_to_dollars(
+        thread["model"], input_tokens, output_tokens
+    )
 
     await interaction.followup.send(
-        f"The running total of this thread is ${response_cost:.5f} ({tokens_used} tokens) over {len(messages)} messages",
+        f"The running total of this thread is ${response_cost:.5f} ({input_tokens} input tokens) ({output_tokens} output tokens) over {len(messages)} messages",
     )
 
 
@@ -303,7 +313,8 @@ async def model(
         content="\n".join(
             (
                 f"**Model switched to {model}**",
-                f"Model Rate: ${openai_pricing.price_for_model(model)}/1000 tokens",
+                f"Model Input Rate: ${openai_pricing.input_price_per_million_tokens(model)}/1M tokens",
+                f"Model Output Rate: ${openai_pricing.output_price_per_million_tokens(model)}/1M tokens",
             )
         ),
     )
@@ -456,7 +467,8 @@ async def ai(
         content="\n".join(
             (
                 f"**Opening a thread with {model}**",
-                f"Model Rate: ${openai_pricing.price_for_model(model)}/1000 tokens",
+                f"Model Input Rate: ${openai_pricing.input_price_per_million_tokens(model)}/1M tokens",
+                f"Model Output Rate: ${openai_pricing.output_price_per_million_tokens(model)}/1M tokens",
             )
         ),
         wait=True,
