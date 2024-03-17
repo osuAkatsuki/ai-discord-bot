@@ -265,16 +265,7 @@ async def cost(interaction: discord.Interaction):
         )
         return
 
-    # TODO: display cost per user
     messages = await thread_messages.fetch_many(thread_id=interaction.channel.id)
-
-    """
-    Thread Cost Breakdown
-    ---------------------
-
-    @cmyui: $4.32 (182 input tokens) (442 output tokens) over 12 messages
-    @flame: $3.12 (132 input tokens) (342 output tokens) over 8 messages
-    """
 
     per_user_tokens: dict[int, dict[Literal["input", "output"], int]] = {}
     per_user_message_count: dict[int, int] = {}
