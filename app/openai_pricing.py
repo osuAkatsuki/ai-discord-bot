@@ -1,8 +1,8 @@
 # https://openai.com/pricing
 
 
-def input_price_per_million_tokens(model_name: str) -> float:
-    match model_name:
+def input_price_per_million_tokens(model: str) -> float:
+    match model:
         case "gpt-4-0125-preview" | "gpt-4-1106-preview" | "gpt-4-1106-vision-preview":
             return 10.00
         case "gpt-4":
@@ -22,11 +22,11 @@ def input_price_per_million_tokens(model_name: str) -> float:
         case "gpt-3.5-turbo-0301":
             return 1.50
         case _:
-            raise NotImplementedError(f"Unknown model: {model_name}")
+            raise NotImplementedError(f"Unknown model: {model}")
 
 
-def output_price_per_million_tokens(model_name: str) -> float:
-    match model_name:
+def output_price_per_million_tokens(model: str) -> float:
+    match model:
         case "gpt-4-0125-preview" | "gpt-4-1106-preview" | "gpt-4-1106-vision-preview":
             return 30.00
         case "gpt-4":
@@ -46,7 +46,7 @@ def output_price_per_million_tokens(model_name: str) -> float:
         case "gpt-3.5-turbo-0301":
             return 2.00
         case _:
-            raise NotImplementedError(f"Unknown model: {model_name}")
+            raise NotImplementedError(f"Unknown model: {model}")
 
 
 def tokens_to_dollars(model: str, input_tokens: int, output_tokens: int) -> float:
