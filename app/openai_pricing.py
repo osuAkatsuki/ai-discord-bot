@@ -4,6 +4,8 @@ from app.adapters.openai.gpt import OpenAIModel
 
 def input_price_per_million_tokens(model: OpenAIModel) -> float:
     match model:
+        case OpenAIModel.GPT_4_OMNI:
+            return 5.00
         case (
             OpenAIModel.GPT_4_TURBO_PREVIEW
             | OpenAIModel.GPT_4_0125_PREVIEW
@@ -33,6 +35,8 @@ def input_price_per_million_tokens(model: OpenAIModel) -> float:
 
 def output_price_per_million_tokens(model: OpenAIModel) -> float:
     match model:
+        case OpenAIModel.GPT_4_OMNI:
+            return 15.00
         case (
             OpenAIModel.GPT_4_TURBO_PREVIEW
             | OpenAIModel.GPT_4_0125_PREVIEW

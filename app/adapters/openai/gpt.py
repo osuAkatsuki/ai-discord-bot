@@ -16,6 +16,7 @@ class OpenAIModel(StrEnum):
     GPT_4_1106_VISION_PREVIEW = "gpt-4-1106-vision-preview"
 
     GPT_4 = "gpt-4"
+    GPT_4_OMNI = "gpt-4o"
     GPT_4_32K = "gpt-4-32k"
 
     GPT_3_5_TURBO_0125 = "gpt-3.5-turbo-0125"
