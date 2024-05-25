@@ -81,8 +81,19 @@ class Bot(discord.Client):
 intents = discord.Intents.default()
 intents.message_content = True
 
+allowed_installs = discord.AppInstallationType(guild=True, user=True)
 
-bot = Bot(intents=intents)
+allowed_contexts = discord.AppCommandContext(
+    guild=True,
+    dm_channel=True,
+    private_channel=True,
+)
+
+bot = Bot(
+    intents=intents,
+    allowed_contexts=allowed_contexts,
+    allowed_installs=allowed_installs,
+)
 command_tree = discord.app_commands.CommandTree(bot)
 
 
@@ -256,9 +267,9 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[
-        int, dict[gpt.OpenAIModel, int]
-    ] = defaultdict(lambda: defaultdict(int))
+    per_user_per_model_input_tokens: dict[int, dict[gpt.OpenAIModel, int]] = (
+        defaultdict(lambda: defaultdict(int))
+    )
     for message in messages:
         if message["role"] != "user":
             continue
