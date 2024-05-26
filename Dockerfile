@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install -U pip setuptools
 RUN pip install -r requirements.txt
-RUN pip install -i https://pypi2.akatsuki.gg/cmyui/dev akatsuki-cli
+RUN pip install git+https://github.com/osuAkatsuki/akatsuki-cli
 
 RUN apt update && \
     apt install -y postgresql-client
