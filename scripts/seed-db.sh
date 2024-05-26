@@ -5,6 +5,8 @@ if [[ $# -eq 0 ]]; then
     echo "Usage: ./migrate-db.sh <up/down/create>"
 fi
 
+source .env # moderate hacks
+
 SEEDS_PATH=/srv/root/database/seeds
 SEEDS_SCHEMA_TABLE=schema_seeds
 
