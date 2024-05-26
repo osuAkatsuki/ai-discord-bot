@@ -15,6 +15,8 @@ execDBStatement() {
     $SSL_ARGS
 }
 
+source .env # moderate hacks
+
 FULL_DB_NAME="${WRITE_DB_NAME}"
 
 if [[ "$APP_COMPONENT" == "tests" ]]; then
