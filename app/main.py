@@ -138,8 +138,16 @@ def split_message(message: str, max_length: int) -> list[str]:
         )
 
 
-# NOTE: An empty string is considered as a valid language.
 def get_unclosed_block_language(chunk: str) -> str | None:
+    """\
+    Given an input string representing Discord message content,
+    find the last unclosed code block and return its language.
+
+    For example, for the following text: "```python\nprint('Hello, World!')",
+    the function should return "python".
+
+    NOTE: An empty string is considered as a valid language.
+    """
     # Even means all blocks were closed correctly.
     if chunk.count("```") % 2 == 0:
         return None
