@@ -138,7 +138,7 @@ def split_message(message: str, max_length: int) -> list[str]:
         )
 
 
-def get_unclosed_block_language(chunk: str) -> str | None:
+def get_unclosed_code_block_language(chunk: str) -> str | None:
     """\
     Given an input string representing Discord message content,
     find the last unclosed code block and return its language.
@@ -260,7 +260,7 @@ async def on_message(message: discord.Message):
                 chunk = f"```{requires_code_block_language}\n" + chunk
                 requires_code_block_language = None
 
-            requires_code_block_language = get_unclosed_block_language(chunk)
+            requires_code_block_language = get_unclosed_code_block_language(chunk)
             if requires_code_block_language is not None:
                 chunk += "\n```"
 
