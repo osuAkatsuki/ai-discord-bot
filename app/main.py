@@ -138,6 +138,31 @@ def split_message(message: str, max_length: int) -> list[str]:
         )
 
 
+def get_unclosed_code_block_language(chunk: str) -> str | None:
+    """\
+    Given an input string representing Discord message content,
+    find the last unclosed code block and return its language.
+
+    For example, for the following text: "```python\nprint('Hello, World!')",
+    the function should return "python".
+
+    NOTE: An empty string is considered as a valid language.
+    """
+    # Even means all blocks were closed correctly.
+    if chunk.count("```") % 2 == 0:
+        return None
+
+    # Find the last block and get its language using the format ```<language>\n
+    block_index = chunk.rfind("```")
+    remaining_slice = chunk[block_index:]
+    slice_split = remaining_slice.split("\n", maxsplit=1)
+
+    # NOTE: This considers edge cases where the block stats at the last
+    # line of the message.
+    language = slice_split[0].removeprefix("```").strip()
+    return language
+
+
 @bot.event
 async def on_message(message: discord.Message):
     # we only care about messages when
@@ -228,7 +253,17 @@ async def on_message(message: discord.Message):
         input_tokens = gpt_response.usage.prompt_tokens
         output_tokens = gpt_response.usage.completion_tokens
 
-        for chunk in split_message(gpt_response_content, 2000):
+        # Handle code blocks which may exceed the previous message.
+        requires_code_block_language = None
+        for chunk in split_message(gpt_response_content, 1985):
+            if requires_code_block_language is not None:
+                chunk = f"```{requires_code_block_language}\n" + chunk
+                requires_code_block_language = None
+
+            requires_code_block_language = get_unclosed_code_block_language(chunk)
+            if requires_code_block_language is not None:
+                chunk += "\n```"
+
             await message.channel.send(chunk)
 
         await thread_messages.create(
