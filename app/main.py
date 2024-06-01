@@ -247,12 +247,14 @@ async def on_message(message: discord.Message):
 
         # Handle code blocks which may exceed the previous message.
         requires_code_block_language = None
-        for chunk in split_message(gpt_response_content, 1989):
+        for chunk in split_message(gpt_response_content, 1985):
             if requires_code_block_language is not None:
                 chunk = f"```{requires_code_block_language}\n" + chunk
                 requires_code_block_language = None
 
             requires_code_block_language = get_unclosed_block(chunk)
+            if requires_code_block_language is not None:
+                chunk += "\n```"
 
             await message.channel.send(chunk)
 
