@@ -139,7 +139,7 @@ def split_message(message: str, max_length: int) -> list[str]:
 
 
 # NOTE: An empty string is considered as a valid language.
-def get_unclosed_block(chunk: str) -> str | None:
+def get_unclosed_block_language(chunk: str) -> str | None:
     # Even means all blocks were closed correctly.
     if chunk.count("```") % 2 == 0:
         return None
@@ -252,7 +252,7 @@ async def on_message(message: discord.Message):
                 chunk = f"```{requires_code_block_language}\n" + chunk
                 requires_code_block_language = None
 
-            requires_code_block_language = get_unclosed_block(chunk)
+            requires_code_block_language = get_unclosed_block_language(chunk)
             if requires_code_block_language is not None:
                 chunk += "\n```"
 
