@@ -136,14 +136,14 @@ def split_message(message: str, max_length: int) -> list[str]:
         return [message[:split_index]] + split_message(
             message[split_index:], max_length
         )
-    
+
 
 # NOTE: An empty string is considered as a valid language.
 def get_unclosed_block(chunk: str) -> str | None:
     # Even means all blocks were closed correctly.
     if chunk.count("```") % 2 == 0:
         return None
-    
+
     # Find the last block and get its language using the format ```<language>\n
     block_index = chunk.rfind("```")
     remaining_slice = chunk[block_index:]
