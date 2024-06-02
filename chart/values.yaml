@@ -23,7 +23,7 @@ apps:
           memory: 250Mi
         requests:
           cpu: 200m
-          memory: 200Mi
+          memory: 150Mi
       env:
         - name: APP_COMPONENT
           value: bot
