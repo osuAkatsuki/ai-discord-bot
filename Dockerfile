@@ -24,4 +24,4 @@ WORKDIR /srv/root
 
 EXPOSE 80
 
-ENTRYPOINT ["/scripts/run-bot.sh"]
+ENTRYPOINT ["/scripts/bootstrap.sh"]
