@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - unsatisfying
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
