@@ -5,15 +5,13 @@ from typing import Literal
 from typing import Required
 from typing import TypedDict
 
-# import backoff
-# import openai.error
-
 import openai
-
 from openai.types.chat import ChatCompletion
 
-
 from app import settings
+
+# import backoff
+# import openai.error
 
 
 openai_client = openai.AsyncOpenAI(
