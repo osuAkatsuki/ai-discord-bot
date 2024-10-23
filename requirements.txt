@@ -1,5 +1,4 @@
 asyncpg
-backoff
 databases
 discord.py
 httpx
