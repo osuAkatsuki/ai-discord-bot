@@ -10,9 +10,6 @@ from openai.types.chat import ChatCompletion
 
 from app import settings
 
-# import backoff
-# import openai.error
-
 
 openai_client = openai.AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
@@ -64,51 +61,6 @@ class FunctionSchema(TypedDict):
     parameters: Parameters
 
 
-class GPTResponse(TypedDict):
-    choices: Sequence[Message]
-
-
-# MAX_BACKOFF_TIME = 16
-
-
-# def _is_non_retriable_error(error: Exception) -> bool:
-#     """\
-#     Determine whether an error is non-retriable.
-#     """
-#     if isinstance(error, openai.error.APIConnectionError):
-#         return error.should_retry  # TODO: confirm this
-#     elif isinstance(
-#         error,
-#         (
-#             openai.error.APIError,  # TODO: confirm this
-#             openai.error.TryAgain,
-#             openai.error.Timeout,
-#             openai.error.RateLimitError,
-#             openai.error.ServiceUnavailableError,
-#         ),
-#     ):
-#         return True
-#     elif isinstance(
-#         error,
-#         (
-#             openai.error.InvalidRequestError,
-#             openai.error.AuthenticationError,
-#             openai.error.PermissionError,
-#             openai.error.InvalidAPIType,
-#             openai.error.SignatureVerificationError,
-#         ),
-#     ):
-#         return False
-#     else:
-#         raise NotImplementedError(f"Unknown error type: {error}")
-
-
-# @backoff.on_exception(
-#     backoff.expo,
-#     openai.error.OpenAIError,
-#     max_time=MAX_BACKOFF_TIME,
-#     giveup=_is_non_retriable_error,
-# )
 async def send(
     model: OpenAIModel,
     messages: Sequence[Message],

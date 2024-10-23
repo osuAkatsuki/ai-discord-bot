@@ -37,7 +37,7 @@ class Bot(discord.Client):
     async def start(self, *args, **kwargs) -> None:
         state.read_database = database.Database(
             database.dsn(
-                scheme="postgresql",
+                scheme=settings.READ_DB_SCHEME,
                 user=settings.READ_DB_USER,
                 password=settings.READ_DB_PASS,
                 host=settings.READ_DB_HOST,
@@ -52,7 +52,7 @@ class Bot(discord.Client):
 
         state.write_database = database.Database(
             database.dsn(
-                scheme="postgresql",
+                scheme=settings.WRITE_DB_SCHEME,
                 user=settings.WRITE_DB_USER,
                 password=settings.WRITE_DB_PASS,
                 host=settings.WRITE_DB_HOST,
@@ -117,11 +117,6 @@ async def on_ready():
     # NOTE: we can't use this as a lifecycle hook because
     # it may be called more than a single time.
     # our lifecycle hook is in our Bot class definition
-
-    import openai
-
-    openai.api_key = settings.OPENAI_API_KEY
-
     await command_tree.sync()
 
 
@@ -303,9 +298,9 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[
-        int, dict[gpt.OpenAIModel, int]
-    ] = defaultdict(lambda: defaultdict(int))
+    per_user_per_model_input_tokens: dict[int, dict[gpt.OpenAIModel, int]] = (
+        defaultdict(lambda: defaultdict(int))
+    )
     for message in messages:
         if message["role"] != "user":
             continue
