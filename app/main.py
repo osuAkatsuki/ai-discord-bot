@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 import io
-import json
 import logging
 import os.path
 import sys
 from collections import defaultdict
 from datetime import datetime
 from datetime import timedelta
-from typing import Any
 
 import discord.abc
-import httpx
+
+from app.errors import Error
+from app.models import DiscordBot
+from app.usecases import ai_conversations
 
 # add .. to path
 srv_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.append(srv_root)
 
-from app import openai_functions
-from app import openai_pricing
+from app import discord_message_utils, openai_pricing
 from app import settings
-from app import state
-from app.adapters import database
 from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
@@ -31,78 +29,11 @@ LOGGER = logging.getLogger(__name__)
 MAX_CONTENT_LENGTH = 100
 
 
-# make parent class for lifecycle hooks :/
-# haven't been able to find anything reliable in discord.py for them
-class Bot(discord.Client):
-    async def start(self, *args, **kwargs) -> None:
-        state.read_database = database.Database(
-            database.dsn(
-                scheme=settings.READ_DB_SCHEME,
-                user=settings.READ_DB_USER,
-                password=settings.READ_DB_PASS,
-                host=settings.READ_DB_HOST,
-                port=settings.READ_DB_PORT,
-                database=settings.READ_DB_NAME,
-            ),
-            db_ssl=settings.READ_DB_USE_SSL,
-            min_pool_size=settings.DB_POOL_MIN_SIZE,
-            max_pool_size=settings.DB_POOL_MAX_SIZE,
-        )
-        await state.read_database.connect()
-
-        state.write_database = database.Database(
-            database.dsn(
-                scheme=settings.WRITE_DB_SCHEME,
-                user=settings.WRITE_DB_USER,
-                password=settings.WRITE_DB_PASS,
-                host=settings.WRITE_DB_HOST,
-                port=settings.WRITE_DB_PORT,
-                database=settings.WRITE_DB_NAME,
-            ),
-            db_ssl=settings.WRITE_DB_USE_SSL,
-            min_pool_size=settings.DB_POOL_MIN_SIZE,
-            max_pool_size=settings.DB_POOL_MAX_SIZE,
-        )
-        await state.write_database.connect()
-
-        state.http_client = httpx.AsyncClient()
-
-        await super().start(*args, **kwargs)
-
-    async def close(self, *args: Any, **kwargs: Any) -> None:
-        await state.read_database.disconnect()
-        await state.write_database.disconnect()
-
-        await state.http_client.aclose()
-
-        await super().close(*args, **kwargs)
-
-
 intents = discord.Intents.default()
 intents.message_content = True
 
-
-bot = Bot(intents=intents)
+bot = DiscordBot(intents=intents)
 command_tree = discord.app_commands.CommandTree(bot)
-
-
-DISCORD_USER_ID_WHITELIST = {
-    # Akatsuki
-    285190493703503872,  # cmyui
-    347459855449325570,  # flame
-    1011439359083413564,  # kat
-    291927822635761665,  # len
-    418325367724703755,  # niotid
-    263413454709194753,  # realistik
-    241178004682833920,  # riffee
-    272111921610752003,  # tsunyoku
-    793331642801324063,  # woot
-    250059887927623680,  # rapha
-    190278149030936576,  # randomize
-    249596453457100801,  # mistral
-    # Super
-    332722012877357066,  # fkzoink
-}
 
 
 def command_name(command_name: str) -> str:
@@ -120,186 +51,16 @@ async def on_ready():
     await command_tree.sync()
 
 
-def split_message(message: str, max_length: int) -> list[str]:
-    if len(message) <= max_length:
-        return [message]
-    else:
-        # split on last space before max_length
-        split_index = message.rfind(" ", 0, max_length)
-        if split_index == -1:
-            split_index = max_length
-        return [message[:split_index]] + split_message(
-            message[split_index:], max_length
-        )
-
-
-def get_unclosed_code_block_language(chunk: str) -> str | None:
-    """\
-    Given an input string representing Discord message content,
-    find the last unclosed code block and return its language.
-
-    For example, for the following text: "```python\nprint('Hello, World!')",
-    the function should return "python".
-
-    NOTE: An empty string is considered as a valid language.
-    """
-    # Even means all blocks were closed correctly.
-    if chunk.count("```") % 2 == 0:
-        return None
-
-    # Find the last block and get its language using the format ```<language>\n
-    block_index = chunk.rfind("```")
-    remaining_slice = chunk[block_index:]
-    slice_split = remaining_slice.split("\n", maxsplit=1)
-
-    # NOTE: This considers edge cases where the block stats at the last
-    # line of the message.
-    language = slice_split[0].removeprefix("```").strip()
-    return language
-
-
 @bot.event
 async def on_message(message: discord.Message):
-    # we only care about messages when
-
-    # we are logged in
-    if bot.user is None:
+    data = await ai_conversations.send_message_to_thread(bot, message)
+    if isinstance(data, Error):
+        for msg in data.messages:
+            await message.channel.send(msg)
         return
 
-    # they are not from us
-    if message.author.id == bot.user.id:
-        return
-
-    # we are mentioned in the message
-    if bot.user not in message.mentions:
-        return
-
-    # has permissions to use this bot
-    if message.author.id not in DISCORD_USER_ID_WHITELIST:
-        await message.channel.send("You are not allowed to use this command")
-        return
-
-    # they are in a thread that we are tracking
-    tracked_thread = await threads.fetch_one(message.channel.id)
-    if tracked_thread is None:
-        return
-
-    prompt = message.clean_content
-    if prompt.startswith(f"{bot.user.mention} "):
-        prompt = prompt.removeprefix(f"{bot.user.mention} ")
-
-    prompt = f"{message.author.name}: {prompt}"
-
-    async with message.channel.typing():
-        thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
-
-        message_history = [
-            gpt.Message(role=m["role"], content=m["content"])
-            for m in thread_history[-tracked_thread["context_length"] :]
-        ]
-        message_history.append({"role": "user", "content": prompt})
-
-        functions = openai_functions.get_full_openai_functions_schema()
-        try:
-            gpt_response = await gpt.send(
-                tracked_thread["model"],
-                message_history,
-                functions,
-            )
-        except Exception as exc:
-            # NOTE: this is *generally* bad practice to expose this information
-            # to end users, and should be removed if we are to deploy this app
-            # more widely. Right now it's okay because it's a private bot.
-            await message.channel.send(
-                f"Request to OpenAI failed with the following error:\n```\n{exc}```"
-            )
-            return
-
-        gpt_choice = gpt_response.choices[0]
-        gpt_message = gpt_choice.message
-        assert gpt_message.content is not None
-
-        message_history.append(
-            gpt.Message(
-                role=gpt_message.role,
-                content=gpt_message.content,
-            )
-        )
-
-        if gpt_choice.finish_reason == "stop":
-            gpt_response_content: str = gpt_message.content
-
-        elif (
-            gpt_choice.finish_reason == "function_call"
-            and gpt_message.function_call is not None
-        ):
-            function_name = gpt_message.function_call.name
-            function_kwargs = json.loads(gpt_message.function_call.arguments)
-
-            ai_function = openai_functions.ai_functions[function_name]
-            function_response = await ai_function["callback"](**function_kwargs)
-
-            # send function response back to gpt for the final response
-            # TODO: could it call another function?
-            #       i think this should support recursive calls
-            message_history.append(
-                {
-                    "role": "function",
-                    "name": function_name,
-                    "content": function_response,
-                }
-            )
-            try:
-                gpt_response = await gpt.send(tracked_thread["model"], message_history)
-            except Exception as exc:
-                # NOTE: this is *generally* bad practice to expose this information
-                # to end users, and should be removed if we are to deploy this app
-                # more widely. Right now it's okay because it's a private bot.
-                await message.channel.send(
-                    f"Request to OpenAI failed with the following error:\n```\n{exc}```"
-                )
-                return
-
-            assert gpt_response.choices[0].message.content is not None
-            gpt_response_content = gpt_response.choices[0].message.content
-
-        else:
-            raise NotImplementedError(
-                f"Unknown chatgpt finish reason: {gpt_choice.finish_reason}"
-            )
-
-        assert gpt_response.usage is not None
-        input_tokens = gpt_response.usage.prompt_tokens
-        output_tokens = gpt_response.usage.completion_tokens
-
-        # Handle code blocks which may exceed the previous message.
-        requires_code_block_language = None
-        for chunk in split_message(gpt_response_content, 1985):
-            if requires_code_block_language is not None:
-                chunk = f"```{requires_code_block_language}\n" + chunk
-                requires_code_block_language = None
-
-            requires_code_block_language = get_unclosed_code_block_language(chunk)
-            if requires_code_block_language is not None:
-                chunk += "\n```"
-
-            await message.channel.send(chunk)
-
-        await thread_messages.create(
-            message.channel.id,
-            prompt,
-            discord_user_id=message.author.id,
-            role="user",
-            tokens_used=input_tokens,
-        )
-
-        await thread_messages.create(
-            message.channel.id,
-            gpt_response_content,
-            discord_user_id=bot.user.id,
-            role="assistant",
-            tokens_used=output_tokens,
-        )
+    for msg in data.response_messages:
+        await message.channel.send(msg)
 
 
 async def _calculate_per_user_costs(
@@ -348,7 +109,7 @@ async def _calculate_per_user_costs(
 
 @command_tree.command(name=command_name("monthlycost"))
 async def monthlycost(interaction: discord.Interaction):
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -386,7 +147,7 @@ async def threadcost(interaction: discord.Interaction):
         )
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -421,7 +182,7 @@ async def model(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -459,7 +220,7 @@ async def context(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -509,7 +270,7 @@ async def summarize(
     if not isinstance(interaction.channel, discord.abc.Messageable):
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -574,7 +335,9 @@ async def summarize(
 
     # tokens_spent = gpt_response.usage.total_tokens
 
-    for chunk in split_message(gpt_response_content, 2000):
+    for chunk in discord_message_utils.split_message_into_chunks(
+        gpt_response_content, max_length=2000
+    ):
         await interaction.followup.send(chunk)
 
 
@@ -593,7 +356,7 @@ async def ai(
         )
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
@@ -636,7 +399,7 @@ async def transcript(
     if not isinstance(interaction.channel, discord.Thread):
         return
 
-    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
         await interaction.response.send_message(
             "You are not allowed to use this command",
             ephemeral=True,
