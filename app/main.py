@@ -209,7 +209,7 @@ async def on_message(message: discord.Message):
             await message.channel.send(
                 "Request failed after multiple retries.\n"
                 "Please try again after some time.\n"
-                "If this issue persists, please contact cmyui#0425 on discord."
+                'If this issue persists, please contact "cmyui" on discord.'
             )
             return
 
