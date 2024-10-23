@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import TypedDict
@@ -22,7 +23,7 @@ class Thread(TypedDict):
     created_at: datetime
 
 
-def deserialize(rec: dict[str, Any]) -> Thread:
+def deserialize(rec: Mapping[str, Any]) -> Thread:
     return {
         "thread_id": rec["thread_id"],
         "initiator_user_id": rec["initiator_user_id"],

@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Literal
@@ -26,7 +27,7 @@ class ThreadMessage(TypedDict):
     created_at: datetime
 
 
-def deserialize(rec: dict[str, Any]) -> ThreadMessage:
+def deserialize(rec: Mapping[str, Any]) -> ThreadMessage:
     return {
         "thread_message_id": rec["thread_message_id"],
         "thread_id": rec["thread_id"],
