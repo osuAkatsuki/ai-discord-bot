@@ -3,5 +3,5 @@ backoff
 databases
 discord.py
 httpx
-openai<1.0.0
+openai
 python-dotenv

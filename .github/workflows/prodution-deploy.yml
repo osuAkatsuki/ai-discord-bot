@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - openai-version-bump
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
