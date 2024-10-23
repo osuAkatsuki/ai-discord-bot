@@ -37,7 +37,7 @@ class Bot(discord.Client):
     async def start(self, *args, **kwargs) -> None:
         state.read_database = database.Database(
             database.dsn(
-                scheme="postgresql",
+                scheme=settings.READ_DB_SCHEME,
                 user=settings.READ_DB_USER,
                 password=settings.READ_DB_PASS,
                 host=settings.READ_DB_HOST,
@@ -52,7 +52,7 @@ class Bot(discord.Client):
 
         state.write_database = database.Database(
             database.dsn(
-                scheme="postgresql",
+                scheme=settings.WRITE_DB_SCHEME,
                 user=settings.WRITE_DB_USER,
                 password=settings.WRITE_DB_PASS,
                 host=settings.WRITE_DB_HOST,
@@ -117,11 +117,6 @@ async def on_ready():
     # NOTE: we can't use this as a lifecycle hook because
     # it may be called more than a single time.
     # our lifecycle hook is in our Bot class definition
-
-    import openai
-
-    openai.api_key = settings.OPENAI_API_KEY
-
     await command_tree.sync()
 
 
@@ -212,22 +207,32 @@ async def on_message(message: discord.Message):
         )
         if not gpt_response:
             await message.channel.send(
-                f"Request failed after multiple retries.\n"
-                f"Please try again after some time.\n"
-                f"If this issue persists, please contact cmyui#0425 on discord."
+                "Request failed after multiple retries.\n"
+                "Please try again after some time.\n"
+                'If this issue persists, please contact "cmyui" on discord.'
             )
             return
 
-        gpt_choice = gpt_response["choices"][0]
-        gpt_message = gpt_choice["message"]
-        message_history.append(gpt_message)
+        gpt_choice = gpt_response.choices[0]
+        gpt_message = gpt_choice.message
+        assert gpt_message.content is not None
 
-        if gpt_choice["finish_reason"] == "stop":
-            gpt_response_content = gpt_message["content"]
+        message_history.append(
+            gpt.Message(
+                role=gpt_message.role,
+                content=gpt_message.content,
+            )
+        )
 
-        elif gpt_choice["finish_reason"] == "function_call":
-            function_name = gpt_message["function_call"]["name"]
-            function_kwargs = json.loads(gpt_message["function_call"]["arguments"])
+        if gpt_choice.finish_reason == "stop":
+            gpt_response_content: str = gpt_message.content
+
+        elif (
+            gpt_choice.finish_reason == "function_call"
+            and gpt_message.function_call is not None
+        ):
+            function_name = gpt_message.function_call.name
+            function_kwargs = json.loads(gpt_message.function_call.arguments)
 
             ai_function = openai_functions.ai_functions[function_name]
             function_response = await ai_function["callback"](**function_kwargs)
@@ -243,13 +248,15 @@ async def on_message(message: discord.Message):
                 }
             )
             gpt_response = await gpt.send(tracked_thread["model"], message_history)
-            gpt_response_content = gpt_response["choices"][0]["message"]["content"]
+            assert gpt_response.choices[0].message.content is not None
+            gpt_response_content = gpt_response.choices[0].message.content
 
         else:
             raise NotImplementedError(
-                f"Unknown chatgpt finish reason: {gpt_choice['finish_reason']}"
+                f"Unknown chatgpt finish reason: {gpt_choice.finish_reason}"
             )
 
+        assert gpt_response.usage is not None
         input_tokens = gpt_response.usage.prompt_tokens
         output_tokens = gpt_response.usage.completion_tokens
 
@@ -344,8 +351,8 @@ async def monthlycost(interaction: discord.Interaction):
     response_cost = sum(per_user_cost.values())
 
     message_chunks = [
-        f"**Monthly Cost Breakdown**",
-        f"**----------------------**",
+        "**Monthly Cost Breakdown**",
+        "**----------------------**",
         "",
     ]
     for user_id, cost in per_user_cost.items():
@@ -380,8 +387,8 @@ async def threadcost(interaction: discord.Interaction):
     response_cost = sum(per_user_cost.values())
 
     message_chunks = [
-        f"**Thread Cost Breakdown**",
-        f"**---------------------**",
+        "**Thread Cost Breakdown**",
+        "**---------------------**",
         "",
     ]
     for user_id, cost in per_user_cost.items():
@@ -472,7 +479,7 @@ async def context(
         content="\n".join(
             (
                 f"**Context length (messages length preserved) updated to {context_length}**",
-                f"NOTE: longer context costs linearly more tokens, so please take care.",
+                "NOTE: longer context costs linearly more tokens, so please take care.",
             )
         )
     )
@@ -542,6 +549,8 @@ async def summarize(
     gpt_response = await gpt.send(gpt.OpenAIModel.GPT_4_OMNI, messages)
 
     gpt_response_content = gpt_response.choices[0].message.content
+    assert gpt_response_content is not None
+
     # tokens_spent = gpt_response.usage.total_tokens
 
     for chunk in split_message(gpt_response_content, 2000):
