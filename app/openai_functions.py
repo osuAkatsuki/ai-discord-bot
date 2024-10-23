@@ -61,7 +61,7 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
             or len(param_type.__metadata__) != 1
         ):
             logging.warning(
-                f"Function decorated with @ai_function lacks parameter description annotation(s)",
+                "Function decorated with @ai_function lacks parameter description annotation(s)",
                 extra={
                     "param_name": param_name,
                     "param_type": param_type,
