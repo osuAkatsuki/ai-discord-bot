@@ -168,7 +168,7 @@ async def send_message_to_thread(
 
             # send function response back to gpt for the final response
             # TODO: could it call another function?
-            #       i think this should support recursive calls
+            #       i think this should they may expect/support recursive calls
             message_history.append(
                 {
                     "role": "function",
