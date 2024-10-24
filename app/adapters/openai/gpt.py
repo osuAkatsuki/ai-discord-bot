@@ -11,6 +11,7 @@ from openai.types.chat import ChatCompletion
 
 from app import settings
 
+VALID_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".gif"}
 
 openai_client = openai.AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
