@@ -10,7 +10,7 @@ SHUTDOWN_TIMEOUT = 15
 
 
 class DiscordBot(discord.Client):
-    async def start(self, *args, **kwargs) -> None:
+    async def start(self, *args: Any, **kwargs: Any) -> None:
         await lifecycle.start()
         await super().start(*args, **kwargs)
 
