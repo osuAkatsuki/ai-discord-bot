@@ -15,7 +15,7 @@ class DiscordBot(discord.Client):
         await super().start(*args, **kwargs)
 
     async def close(self, *args: Any, **kwargs: Any) -> None:
-        async def _shutdown():
+        async def _shutdown() -> None:
             await lifecycle.stop()
             await super().close(*args, **kwargs)
 
