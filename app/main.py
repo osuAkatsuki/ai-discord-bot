@@ -9,13 +9,14 @@ from datetime import timedelta
 
 import discord.abc
 
+# add .. to path
+srv_root = os.path.join(os.path.dirname(__file__), "..")
+sys.path.append(srv_root)
+
 from app.errors import Error
 from app.models import DiscordBot
 from app.usecases import ai_conversations
 
-# add .. to path
-srv_root = os.path.join(os.path.dirname(__file__), "..")
-sys.path.append(srv_root)
 
 from app import discord_message_utils, openai_pricing
 from app import settings
