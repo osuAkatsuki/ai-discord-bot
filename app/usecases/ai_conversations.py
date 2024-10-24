@@ -99,12 +99,14 @@ async def send_message_to_thread(
 
         # Extract image URLs from the prompt and replace them with {IMAGE}
         prompt_parts = prompt.split()
+        images_seen = 0
         for i, part in enumerate(prompt_parts):
             if (part.startswith("http://") or part.startswith("https://")) and any(
                 part.endswith(ext) for ext in gpt.VALID_IMAGE_EXTENSIONS
             ):
                 image_urls.append(part)
-                prompt_parts[i] = f"{{IMAGE #{i + 1}}}"
+                prompt_parts[i] = f"{{IMAGE #{images_seen + 1}}}"
+                images_seen += 1
         prompt = " ".join(prompt_parts)
 
         # Add the new prompt and attachments to the message history
@@ -131,6 +133,7 @@ async def send_message_to_thread(
                 "content": new_message_content,
             }
         )
+        print(new_message_content)
 
         functions = openai_functions.get_full_openai_functions_schema()
         try:
