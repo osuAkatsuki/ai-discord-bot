@@ -33,8 +33,20 @@ MAX_CONTENT_LENGTH = 100
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = DiscordBot(intents=intents)
-command_tree = discord.app_commands.CommandTree(bot)
+allowed_installs = discord.app_commands.AppInstallationType(guild=True, user=True)
+
+allowed_contexts = discord.app_commands.AppCommandContext(
+    guild=True,
+    dm_channel=True,
+    private_channel=True,
+)
+
+bot = Bot(intents=intents)
+command_tree = discord.app_commands.CommandTree(
+    bot,
+    allowed_contexts=allowed_contexts,
+    allowed_installs=allowed_installs,
+)
 
 
 def command_name(command_name: str) -> str:
