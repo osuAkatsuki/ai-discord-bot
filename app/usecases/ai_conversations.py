@@ -125,6 +125,7 @@ async def send_message_to_thread(
                 }
             )
         for attachment in message.attachments:
+            # TODO: should these be included as {IMAGE #N} at the end of the message?
             image_urls.append(attachment.url)
 
         message_history.append(
