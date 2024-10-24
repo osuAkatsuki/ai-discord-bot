@@ -85,7 +85,6 @@ async def send_message_to_thread(
     async with message.channel.typing():
         thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
-
         message_history: list[gpt.Message] = [
             {
                 "role": m["role"],
