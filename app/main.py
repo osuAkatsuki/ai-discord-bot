@@ -181,6 +181,10 @@ async def model(
     model: gpt.OpenAIModel,
 ):
     if not isinstance(interaction.channel, discord.Thread):
+        await interaction.followup.send(
+            "This command can only be used in threads.",
+            ephemeral=True,
+        )
         return
 
     if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
@@ -219,6 +223,10 @@ async def context(
     context_length: int,
 ):
     if not isinstance(interaction.channel, discord.Thread):
+        await interaction.followup.send(
+            "This command can only be used in threads.",
+            ephemeral=True,
+        )
         return
 
     if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
@@ -366,8 +374,12 @@ async def ai(
 
     await interaction.response.defer()
 
-    assert interaction.channel is not None
-    assert isinstance(interaction.channel, discord.TextChannel)
+    if not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.followup.send(
+            "This command can only be used in text channels.",
+            ephemeral=True,
+        )
+        return
 
     thread_creation_message = await interaction.followup.send(
         content="\n".join(
@@ -398,6 +410,10 @@ async def transcript(
     context_length: int | None = None,
 ):
     if not isinstance(interaction.channel, discord.Thread):
+        await interaction.followup.send(
+            "This command can only be used in threads.",
+            ephemeral=True,
+        )
         return
 
     if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
