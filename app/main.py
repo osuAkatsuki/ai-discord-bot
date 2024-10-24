@@ -301,17 +301,27 @@ async def summarize(
     else:
         tracking = True
 
-    messages = []
+    messages: list[gpt.Message] = []
 
     async for message in interaction.channel.history(limit=limit):
         content = message.clean_content
         if not content:  # ignore empty messages (e.g. only images)
             continue
 
-        author_name = message.author.name
+        author_name = ai_conversations.get_author_name(message.author.name)
 
         if tracking:
-            messages.append({"role": "user", "content": f"{author_name}: {content}"})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"{author_name}: {content}",
+                        }
+                    ],
+                }
+            )
         elif end_message_id is not None:
             if message.id == end_message_id:
                 tracking = True
@@ -324,12 +334,20 @@ async def summarize(
     messages.append(
         {
             "role": "user",
-            "content": "Could you summarize the above conversation?",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Could you summarize the above conversation?",
+                }
+            ],
         }
     )
 
     try:
-        gpt_response = await gpt.send(gpt.OpenAIModel.GPT_4_OMNI, messages)
+        gpt_response = await gpt.send(
+            model=gpt.OpenAIModel.GPT_4_OMNI,
+            messages=messages,
+        )
     except Exception as exc:
         # NOTE: this is *generally* bad practice to expose this information
         # to end users, and should be removed if we are to deploy this app

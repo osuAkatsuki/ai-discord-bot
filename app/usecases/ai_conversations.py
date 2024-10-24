@@ -1,4 +1,5 @@
 import json
+import traceback
 
 import discord
 from pydantic import BaseModel
@@ -30,6 +31,15 @@ DISCORD_USER_ID_WHITELIST: set[int] = {
     # Super
     332722012877357066,  # fkzoink
 }
+
+
+def _get_author_id(author_name: str) -> int:
+    # get a 3 digit highly unique id
+    return hash(author_name) % 1000
+
+
+def get_author_name(discord_author_name: str) -> str:
+    return f"User #{_get_author_id(discord_author_name)}"
 
 
 class SendAndReceiveResponse(BaseModel):
@@ -69,25 +79,55 @@ async def send_message_to_thread(
     if prompt.startswith(f"{bot.user.mention} "):
         prompt = prompt.removeprefix(f"{bot.user.mention} ")
 
-    prompt = f"{message.author.name}: {prompt}"
+    author_name = get_author_name(message.author.name)
+    prompt = f"{author_name}: {prompt}"
 
     async with message.channel.typing():
         thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
-        message_history = [
-            gpt.Message(role=m["role"], content=m["content"])
+        message_history: list[gpt.Message] = [
+            {
+                "role": m["role"],
+                "content": [{"type": "text", "text": m["content"]}],
+            }
             for m in thread_history[-tracked_thread["context_length"] :]
         ]
-        message_history.append({"role": "user", "content": prompt})
+
+        # Append this new message (along w/ any attachments) to the history
+        message_history.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    }
+                ],
+            }
+        )
+        if message.attachments:
+            for attachment in message.attachments:
+                message_history.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": attachment.url},
+                            }
+                        ],
+                    }
+                )
 
         functions = openai_functions.get_full_openai_functions_schema()
         try:
             gpt_response = await gpt.send(
-                tracked_thread["model"],
-                message_history,
-                functions,
+                model=tracked_thread["model"],
+                messages=message_history,
+                functions=functions,
             )
         except Exception as exc:
+            traceback.print_exc()
             # NOTE: this is *generally* bad practice to expose this information
             # to end users, and should be removed if we are to deploy this app
             # more widely. Right now it's okay because it's a private bot.
@@ -100,18 +140,22 @@ async def send_message_to_thread(
 
         gpt_choice = gpt_response.choices[0]
         gpt_message = gpt_choice.message
-        assert gpt_message.content is not None
-
-        message_history.append(
-            gpt.Message(
-                role=gpt_message.role,
-                content=gpt_message.content,
-            )
-        )
 
         if gpt_choice.finish_reason == "stop":
+            assert gpt_message.content is not None
             gpt_response_content: str = gpt_message.content
 
+            message_history.append(
+                {
+                    "role": gpt_message.role,
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": gpt_message.content,
+                        }
+                    ],
+                }
+            )
         elif (
             gpt_choice.finish_reason == "function_call"
             and gpt_message.function_call is not None
@@ -129,12 +173,16 @@ async def send_message_to_thread(
                 {
                     "role": "function",
                     "name": function_name,
-                    "content": function_response,
+                    "content": [function_response],
                 }
             )
             try:
-                gpt_response = await gpt.send(tracked_thread["model"], message_history)
+                gpt_response = await gpt.send(
+                    model=tracked_thread["model"],
+                    messages=message_history,
+                )
             except Exception as exc:
+                traceback.print_exc()
                 # NOTE: this is *generally* bad practice to expose this information
                 # to end users, and should be removed if we are to deploy this app
                 # more widely. Right now it's okay because it's a private bot.
