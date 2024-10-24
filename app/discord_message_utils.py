@@ -9,6 +9,7 @@ def get_unclosed_code_block_language(message_chunk: str) -> str | None:
     NOTE: An empty string is considered as a valid language.
     """
     # Even means all blocks were closed correctly.
+    # TODO: this is not really true because of "\```"
     if message_chunk.count("```") % 2 == 0:
         return None
 
