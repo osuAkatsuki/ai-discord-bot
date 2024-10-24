@@ -200,16 +200,18 @@ async def on_message(message: discord.Message):
         message_history.append({"role": "user", "content": prompt})
 
         functions = openai_functions.get_full_openai_functions_schema()
-        gpt_response = await gpt.send(
-            tracked_thread["model"],
-            message_history,
-            functions,
-        )
-        if not gpt_response:
+        try:
+            gpt_response = await gpt.send(
+                tracked_thread["model"],
+                message_history,
+                functions,
+            )
+        except Exception as exc:
+            # NOTE: this is *generally* bad practice to expose this information
+            # to end users, and should be removed if we are to deploy this app
+            # more widely. Right now it's okay because it's a private bot.
             await message.channel.send(
-                "Request failed after multiple retries.\n"
-                "Please try again after some time.\n"
-                'If this issue persists, please contact "cmyui" on discord.'
+                f"Request to OpenAI failed with the following error:\n```\n{exc}```"
             )
             return
 
@@ -247,7 +249,17 @@ async def on_message(message: discord.Message):
                     "content": function_response,
                 }
             )
-            gpt_response = await gpt.send(tracked_thread["model"], message_history)
+            try:
+                gpt_response = await gpt.send(tracked_thread["model"], message_history)
+            except Exception as exc:
+                # NOTE: this is *generally* bad practice to expose this information
+                # to end users, and should be removed if we are to deploy this app
+                # more widely. Right now it's okay because it's a private bot.
+                await message.channel.send(
+                    f"Request to OpenAI failed with the following error:\n```\n{exc}```"
+                )
+                return
+
             assert gpt_response.choices[0].message.content is not None
             gpt_response_content = gpt_response.choices[0].message.content
 
@@ -546,7 +558,16 @@ async def summarize(
         }
     )
 
-    gpt_response = await gpt.send(gpt.OpenAIModel.GPT_4_OMNI, messages)
+    try:
+        gpt_response = await gpt.send(gpt.OpenAIModel.GPT_4_OMNI, messages)
+    except Exception as exc:
+        # NOTE: this is *generally* bad practice to expose this information
+        # to end users, and should be removed if we are to deploy this app
+        # more widely. Right now it's okay because it's a private bot.
+        await interaction.followup.send(
+            f"Request to OpenAI failed with the following error:\n```\n{exc}```"
+        )
+        return
 
     gpt_response_content = gpt_response.choices[0].message.content
     assert gpt_response_content is not None
