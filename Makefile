@@ -1,5 +1,10 @@
 #!/usr/bin/make
 
+install:
+	python3.11 -m virtualenv venv
+	. venv/bin/activate
+	pip install -r requirements.txt -r requirements-dev.txt
+
 build: # build all containers
 	if [ -d "pgdata" ]; then sudo chmod -R 755 pgdata; fi
 	docker build -t ai-discord-bot:latest -t ai-discord-bot:latest .
