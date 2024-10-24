@@ -134,7 +134,6 @@ async def send_message_to_thread(
                 "content": new_message_content,
             }
         )
-        print(new_message_content)
 
         functions = openai_functions.get_full_openai_functions_schema()
         try:
