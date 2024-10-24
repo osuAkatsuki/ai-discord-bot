@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app import discord_message_utils
 from app import openai_functions
 from app.adapters.openai import gpt
+from app.adapters.openai.gpt import MessageContent
 from app.errors import Error
 from app.errors import ErrorCode
 from app.models import DiscordBot
@@ -93,31 +94,43 @@ async def send_message_to_thread(
             for m in thread_history[-tracked_thread.context_length :]
         ]
 
-        # Append this new message (along w/ any attachments) to the history
+        ## Build the new message's prompt
+        image_urls: list[str] = []
+
+        # Extract image URLs from the prompt and replace them with {IMAGE}
+        prompt_parts = prompt.split()
+        for i, part in enumerate(prompt_parts):
+            if (part.startswith("http://") or part.startswith("https://")) and any(
+                part.endswith(ext) for ext in gpt.VALID_IMAGE_EXTENSIONS
+            ):
+                image_urls.append(part)
+                prompt_parts[i] = f"{{IMAGE #{i + 1}}}"
+        prompt = " ".join(prompt_parts)
+
+        # Add the new prompt and attachments to the message history
+        new_message_content: list[MessageContent] = []
+        new_message_content.append(
+            {
+                "type": "text",
+                "text": prompt,
+            }
+        )
+        for image_url in image_urls:
+            new_message_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_url},
+                }
+            )
+        for attachment in message.attachments:
+            image_urls.append(attachment.url)
+
         message_history.append(
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    }
-                ],
+                "content": new_message_content,
             }
         )
-        if message.attachments:
-            for attachment in message.attachments:
-                message_history.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": attachment.url},
-                            }
-                        ],
-                    }
-                )
 
         functions = openai_functions.get_full_openai_functions_schema()
         try:
