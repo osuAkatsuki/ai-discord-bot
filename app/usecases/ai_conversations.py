@@ -87,10 +87,10 @@ async def send_message_to_thread(
 
         message_history: list[gpt.Message] = [
             {
-                "role": m["role"],
-                "content": [{"type": "text", "text": m["content"]}],
+                "role": m.role,
+                "content": [{"type": "text", "text": m.content}],
             }
-            for m in thread_history[-tracked_thread["context_length"] :]
+            for m in thread_history[-tracked_thread.context_length :]
         ]
 
         # Append this new message (along w/ any attachments) to the history
@@ -122,7 +122,7 @@ async def send_message_to_thread(
         functions = openai_functions.get_full_openai_functions_schema()
         try:
             gpt_response = await gpt.send(
-                model=tracked_thread["model"],
+                model=tracked_thread.model,
                 messages=message_history,
                 functions=functions,
             )
@@ -178,7 +178,7 @@ async def send_message_to_thread(
             )
             try:
                 gpt_response = await gpt.send(
-                    model=tracked_thread["model"],
+                    model=tracked_thread.model,
                     messages=message_history,
                 )
             except Exception as exc:

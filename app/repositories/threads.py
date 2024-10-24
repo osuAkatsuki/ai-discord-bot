@@ -1,7 +1,8 @@
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
-from typing import TypedDict
+
+from pydantic import BaseModel
 
 from app import state
 from app.adapters.openai.gpt import OpenAIModel
@@ -15,7 +16,7 @@ READ_PARAMS = """\
 """
 
 
-class Thread(TypedDict):
+class Thread(BaseModel):
     thread_id: int
     initiator_user_id: int
     model: OpenAIModel
@@ -24,13 +25,13 @@ class Thread(TypedDict):
 
 
 def deserialize(rec: Mapping[str, Any]) -> Thread:
-    return {
-        "thread_id": rec["thread_id"],
-        "initiator_user_id": rec["initiator_user_id"],
-        "model": OpenAIModel(rec["model"]),
-        "context_length": rec["context_length"],
-        "created_at": rec["created_at"],
-    }
+    return Thread(
+        thread_id=rec["thread_id"],
+        initiator_user_id=rec["initiator_user_id"],
+        model=OpenAIModel(rec["model"]),
+        context_length=rec["context_length"],
+        created_at=rec["created_at"],
+    )
 
 
 async def create(

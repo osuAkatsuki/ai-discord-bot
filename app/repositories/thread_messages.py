@@ -2,7 +2,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Literal
-from typing import TypedDict
+
+from pydantic import BaseModel
 
 from app import state
 
@@ -17,7 +18,7 @@ READ_PARAMS = """\
 """
 
 
-class ThreadMessage(TypedDict):
+class ThreadMessage(BaseModel):
     thread_message_id: int
     thread_id: int
     content: str
@@ -28,15 +29,15 @@ class ThreadMessage(TypedDict):
 
 
 def deserialize(rec: Mapping[str, Any]) -> ThreadMessage:
-    return {
-        "thread_message_id": rec["thread_message_id"],
-        "thread_id": rec["thread_id"],
-        "content": rec["content"],
-        "discord_user_id": rec["discord_user_id"],
-        "role": rec["role"],
-        "tokens_used": rec["tokens_used"],
-        "created_at": rec["created_at"],
-    }
+    return ThreadMessage(
+        thread_message_id=rec["thread_message_id"],
+        thread_id=rec["thread_id"],
+        content=rec["content"],
+        discord_user_id=rec["discord_user_id"],
+        role=rec["role"],
+        tokens_used=rec["tokens_used"],
+        created_at=rec["created_at"],
+    )
 
 
 async def create(

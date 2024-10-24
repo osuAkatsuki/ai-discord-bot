@@ -76,10 +76,10 @@ async def _calculate_per_user_costs(
         defaultdict(lambda: defaultdict(int))
     )
     for message in messages:
-        if message["role"] != "user":
+        if message.role != "user":
             continue
 
-        thread_id = message["thread_id"]
+        thread_id = message.thread_id
         thread = threads_cache.get(thread_id)
         if thread is None:
             thread = await threads.fetch_one(thread_id)
@@ -92,9 +92,9 @@ async def _calculate_per_user_costs(
                 continue
             threads_cache[thread_id] = thread
 
-        user_id = message["discord_user_id"]
+        user_id = message.discord_user_id
         per_model_input_tokens = per_user_per_model_input_tokens[user_id]
-        per_model_input_tokens[thread["model"]] += message["tokens_used"]
+        per_model_input_tokens[thread.model] += message.tokens_used
 
     per_user_cost: dict[int, float] = defaultdict(float)
     for user_id, per_model_tokens in per_user_per_model_input_tokens.items():
@@ -204,7 +204,7 @@ async def model(
         )
         return
 
-    await threads.partial_update(thread["thread_id"], model=model)
+    await threads.partial_update(thread.thread_id, model=model)
 
     await interaction.followup.send(
         content="\n".join(
@@ -253,7 +253,7 @@ async def context(
         return
 
     await threads.partial_update(
-        thread["thread_id"],
+        thread.thread_id,
         context_length=context_length,
     )
 
@@ -457,7 +457,7 @@ async def transcript(
     )
 
     transcript_content = "\n".join(
-        "[{created_at:%d/%m/%Y %I:%M:%S%p}] {content}".format(**msg)
+        f"[{msg.created_at:%d/%m/%Y %I:%M:%S%p}] {msg.content}"
         for msg in current_thread_messages
     )
     with io.BytesIO(transcript_content.encode()) as f:
