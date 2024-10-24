@@ -5,6 +5,7 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install -U pip setuptools
 RUN pip install -r requirements.txt
+RUN pip install git+https://github.com/osuAkatsuki/akatsuki-cli
 
 RUN apt update && \
     apt install -y postgresql-client
@@ -23,4 +24,4 @@ WORKDIR /srv/root
 
 EXPOSE 80
 
-ENTRYPOINT ["/scripts/run-bot.sh"]
+ENTRYPOINT ["/scripts/bootstrap.sh"]

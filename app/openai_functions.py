@@ -4,6 +4,7 @@ import typing
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Annotated
+from typing import TypeAlias
 from typing import TypedDict
 
 from app import settings
@@ -11,10 +12,13 @@ from app import state
 from app._typing import UNSET
 from app._typing import Unset
 from app.adapters.openai.gpt import FunctionSchema
+from app.adapters.openai.gpt import MessageContent
+
+OpenAIFunctionCallback: TypeAlias = Callable[..., Awaitable[MessageContent]]
 
 
 class OpenAIFunction(TypedDict):
-    callback: Callable[..., Awaitable[str]]
+    callback: OpenAIFunctionCallback
     schema: FunctionSchema
 
 
@@ -30,7 +34,7 @@ def translate_python_to_openai_type(python_type: type) -> str:
         raise NotImplementedError(f"Unsupported type python {python_type}")
 
 
-def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSchema:
+def get_function_openai_schema(f: OpenAIFunctionCallback) -> FunctionSchema:
     assert f.__doc__ is not None, "All AI functions must have docstrings"
 
     schema: FunctionSchema = {
@@ -61,7 +65,7 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
             or len(param_type.__metadata__) != 1
         ):
             logging.warning(
-                f"Function decorated with @ai_function lacks parameter description annotation(s)",
+                "Function decorated with @ai_function lacks parameter description annotation(s)",
                 extra={
                     "param_name": param_name,
                     "param_type": param_type,
@@ -84,7 +88,7 @@ def get_function_openai_schema(f: Callable[..., Awaitable[str]]) -> FunctionSche
     return schema
 
 
-def ai_function(f: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+def ai_function(f: OpenAIFunctionCallback) -> OpenAIFunctionCallback:
     ai_functions[f.__name__] = {
         "callback": f,
         "schema": get_function_openai_schema(f),
@@ -124,7 +128,7 @@ def celcius_to_fahrenheit(degrees_celcius: float) -> float:
 @ai_function
 async def get_weather_for_location(
     location: Annotated[str, "The city name for which to fetch the weather"],
-) -> str:
+) -> MessageContent:
     """Fetch the weather for a given location."""
     cached = location_cache.get(location)
     if cached is not None:
@@ -158,4 +162,7 @@ async def get_weather_for_location(
     degrees_celcius = response_data["hourly"]["temperature_2m"][-1]
     degrees_fahrenheit = celcius_to_fahrenheit(degrees_celcius)
 
-    return f"{degrees_celcius}°C / {degrees_fahrenheit}°F"
+    return {
+        "type": "text",
+        "text": f"{degrees_celcius}°C / {degrees_fahrenheit}°F",
+    }

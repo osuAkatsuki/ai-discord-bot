@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+source .env # moderate hacks
+
 execDBStatement() {
   if [[ $WRITE_DB_USE_SSL == "true" ]]; then
     SSL_ARGS="--set=sslmode=require"

@@ -1,7 +1,6 @@
 asyncpg
-backoff
 databases
 git+https://github.com/Rapptz/discord.py.git@efe81a67fb55f9f2a67bb84810be729ed8f09bc3
 httpx
-openai<1.0.0
+openai
 python-dotenv
