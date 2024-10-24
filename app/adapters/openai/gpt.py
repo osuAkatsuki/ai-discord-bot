@@ -48,7 +48,7 @@ class ImageUrl(TypedDict):
 
 
 class ImageUrlMessage(TypedDict):
-    type: Literal["image"]
+    type: Literal["image_url"]
     image_url: ImageUrl
 
 

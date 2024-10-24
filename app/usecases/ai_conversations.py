@@ -92,6 +92,8 @@ async def send_message_to_thread(
             }
             for m in thread_history[-tracked_thread["context_length"] :]
         ]
+
+        # Append this new message (along w/ any attachments) to the history
         message_history.append(
             {
                 "role": "user",
@@ -103,6 +105,19 @@ async def send_message_to_thread(
                 ],
             }
         )
+        if message.attachments:
+            for attachment in message.attachments:
+                message_history.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": attachment.url},
+                            }
+                        ],
+                    }
+                )
 
         functions = openai_functions.get_full_openai_functions_schema()
         try:
