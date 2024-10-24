@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Any
 from typing import Literal
 from typing import Required
+from typing import TypeAlias
 from typing import TypedDict
 
 import openai
@@ -37,9 +38,26 @@ class OpenAIModel(StrEnum):
     GPT_3_5_TURBO = "gpt-3.5-turbo"
 
 
+class TextMessage(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
+class ImageUrl(TypedDict):
+    url: str
+
+
+class ImageUrlMessage(TypedDict):
+    type: Literal["image"]
+    image_url: ImageUrl
+
+
+MessageContent: TypeAlias = TextMessage | ImageUrlMessage
+
+
 class Message(TypedDict, total=False):
     role: Required[Literal["user", "assistant", "function"]]
-    content: Required[str]
+    content: Required[list[MessageContent]]
     name: str  # only exists when role is "function"
 
 
@@ -62,6 +80,7 @@ class FunctionSchema(TypedDict):
 
 
 async def send(
+    *,
     model: OpenAIModel,
     messages: Sequence[Message],
     functions: Sequence[FunctionSchema] | None = None,
