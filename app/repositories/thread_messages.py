@@ -1,6 +1,6 @@
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
-from typing import cast
 from typing import Literal
 from typing import TypedDict
 
@@ -27,6 +27,18 @@ class ThreadMessage(TypedDict):
     created_at: datetime
 
 
+def deserialize(rec: Mapping[str, Any]) -> ThreadMessage:
+    return {
+        "thread_message_id": rec["thread_message_id"],
+        "thread_id": rec["thread_id"],
+        "content": rec["content"],
+        "discord_user_id": rec["discord_user_id"],
+        "role": rec["role"],
+        "tokens_used": rec["tokens_used"],
+        "created_at": rec["created_at"],
+    }
+
+
 async def create(
     thread_id: int,
     content: str,
@@ -47,10 +59,11 @@ async def create(
         "tokens_used": tokens_used,
     }
     rec = await state.write_database.fetch_one(query, values)
-    return cast(ThreadMessage, rec)
+    assert rec is not None
+    return deserialize(rec)
 
 
-async def fetch_one(thread_message_id: int) -> ThreadMessage:
+async def fetch_one(thread_message_id: int) -> ThreadMessage | None:
     query = f"""\
         SELECT {READ_PARAMS}
         FROM thread_messages
@@ -58,7 +71,7 @@ async def fetch_one(thread_message_id: int) -> ThreadMessage:
     """
     values: dict[str, Any] = {"thread_message_id": thread_message_id}
     rec = await state.read_database.fetch_one(query, values)
-    return cast(ThreadMessage, rec)
+    return deserialize(rec) if rec is not None else None
 
 
 async def fetch_many(
@@ -89,4 +102,4 @@ async def fetch_many(
         values["page_size"] = page_size
         values["offset"] = (page - 1) * page_size
     recs = await state.read_database.fetch_all(query, values)
-    return cast(list[ThreadMessage], recs)
+    return [deserialize(rec) for rec in recs]

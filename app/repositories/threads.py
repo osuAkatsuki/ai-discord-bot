@@ -1,6 +1,6 @@
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
-from typing import cast
 from typing import TypedDict
 
 from app import state
@@ -23,9 +23,14 @@ class Thread(TypedDict):
     created_at: datetime
 
 
-def deserialize(rec: dict[str, Any]) -> dict[str, Any]:
-    rec["model"] = OpenAIModel(rec["model"])
-    return rec
+def deserialize(rec: Mapping[str, Any]) -> Thread:
+    return {
+        "thread_id": rec["thread_id"],
+        "initiator_user_id": rec["initiator_user_id"],
+        "model": OpenAIModel(rec["model"]),
+        "context_length": rec["context_length"],
+        "created_at": rec["created_at"],
+    }
 
 
 async def create(
@@ -47,7 +52,7 @@ async def create(
     }
     rec = await state.write_database.fetch_one(query, values)
     assert rec is not None
-    return cast(Thread, deserialize(rec))
+    return deserialize(rec)
 
 
 async def fetch_one(thread_id: int) -> Thread | None:
@@ -58,7 +63,7 @@ async def fetch_one(thread_id: int) -> Thread | None:
     """
     values: dict[str, Any] = {"thread_id": thread_id}
     rec = await state.read_database.fetch_one(query, values)
-    return cast(Thread, deserialize(rec)) if rec is not None else None
+    return deserialize(rec) if rec is not None else None
 
 
 async def fetch_many(
@@ -85,7 +90,7 @@ async def fetch_many(
         values["page_size"] = page_size
         values["offset"] = (page - 1) * page_size
     recs = await state.read_database.fetch_all(query, values)
-    return cast(list[Thread], [deserialize(r) for r in recs])
+    return [deserialize(rec) for rec in recs]
 
 
 async def partial_update(
@@ -109,4 +114,4 @@ async def partial_update(
         "context_length": context_length,
     }
     rec = await state.write_database.fetch_one(query, values)
-    return cast(Thread, deserialize(rec)) if rec is not None else None
+    return deserialize(rec) if rec is not None else None
