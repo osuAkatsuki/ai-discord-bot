@@ -50,7 +50,10 @@ class _GptRequestResponse(NamedTuple):
     input_tokens: int
     output_tokens: int
 
-async def _make_gpt_request(message_history: list[gpt.Message], model: gpt.OpenAIModel) -> _GptRequestResponse | Error:
+
+async def _make_gpt_request(
+    message_history: list[gpt.Message], model: gpt.OpenAIModel
+) -> _GptRequestResponse | Error:
     functions = openai_functions.get_full_openai_functions_schema()
     try:
         gpt_response = await gpt.send(
@@ -243,9 +246,11 @@ async def send_message_to_thread(
             return gpt_response
 
         # Handle code blocks which may exceed the previous message.
-        response_messages: list[str] = discord_message_utils.smart_split_message_into_chunks(
-            gpt_response.response_content,
-            max_length=2000,
+        response_messages: list[str] = (
+            discord_message_utils.smart_split_message_into_chunks(
+                gpt_response.response_content,
+                max_length=2000,
+            )
         )
 
         await thread_messages.create(
@@ -289,7 +294,7 @@ async def send_message_without_context(
             code=ErrorCode.UNAUTHORIZED,
             messages=["User is not authorised to use this bot"],
         )
-    
+
     prompt = f"{interaction.user.name}: {message_content}"
 
     user_messages: list[MessageContent] = [
@@ -308,11 +313,13 @@ async def send_message_without_context(
     gpt_response = await _make_gpt_request(message_context, model)
     if isinstance(gpt_response, Error):
         return gpt_response
-    
+
     # TODO: Track input and output tokens here.
 
-    response_messages: list[str] = discord_message_utils.smart_split_message_into_chunks(
-        gpt_response.response_content,
-        max_length=2000,
+    response_messages: list[str] = (
+        discord_message_utils.smart_split_message_into_chunks(
+            gpt_response.response_content,
+            max_length=2000,
+        )
     )
     return SendAndReceiveResponse(response_messages=response_messages)

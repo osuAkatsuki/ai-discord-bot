@@ -466,8 +466,10 @@ async def transcript(
             file=discord.File(f, filename="transcript.txt"),
         )
 
+
 TRUNCATION_SUFFIX = " (truncated)"
 TRUNCATION_SUFFIX_LENGTH = len(TRUNCATION_SUFFIX)
+
 
 @command_tree.command(name=command_name("query"))
 async def query(
