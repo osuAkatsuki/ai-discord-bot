@@ -47,6 +47,7 @@ def smart_split_message_into_chunks(message: str, *, max_length: int) -> list[st
         max_length=max_length - 15,
     )
     output_messages = []
+    code_block_language = None
 
     for message_chunk in split_messages:
         if code_block_language is not None:
