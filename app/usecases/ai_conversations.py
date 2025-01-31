@@ -295,7 +295,8 @@ async def send_message_without_context(
             messages=["User is not authorised to use this bot"],
         )
 
-    prompt = f"{interaction.user.name}: {message_content}"
+    author_name = get_author_name(interaction.user.name)
+    prompt = f"{author_name}: {message_content}"
 
     user_messages: list[MessageContent] = [
         {
