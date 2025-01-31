@@ -466,6 +466,35 @@ async def transcript(
             file=discord.File(f, filename="transcript.txt"),
         )
 
+TRUNCATION_SUFFIX = " (truncated)"
+TRUNCATION_SUFFIX_LENGTH = len(TRUNCATION_SUFFIX)
+
+@command_tree.command(name=command_name("query"))
+async def query(
+    interaction: discord.Interaction,
+    query: str,
+    model: gpt.OpenAIModel = gpt.OpenAIModel.GPT_4_OMNI,
+):
+    """Query a model without any context."""
+
+    result = await ai_conversations.send_message_without_context(
+        bot,
+        interaction,
+        query,
+        model,
+    )
+
+    # I do not think interactions allow multiple messages.
+    messages_to_send: list[str] = []
+    if isinstance(result, Error):
+        messages_to_send = result.messages
+    else:
+        messages_to_send = result.response_messages
+
+    # I have no idea whether they actually allow you to send multiple follow-ups.
+    for message_text in messages_to_send:
+        await interaction.followup.send(message_text)
+
 
 if __name__ == "__main__":
     bot.run(settings.DISCORD_TOKEN)

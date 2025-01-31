@@ -36,3 +36,30 @@ def split_message_into_chunks(message: str, *, max_length: int) -> list[str]:
         return [message[:split_index]] + split_message_into_chunks(
             message[split_index:], max_length=max_length
         )
+    
+
+def smart_split_message_into_chunks(message: str, *, max_length: int) -> list[str]:
+    """Like `split_message_into_chunks`, but also considers code blocks."""
+
+    split_messages = split_message_into_chunks(
+        message,
+        # Magic number to account for MD code embed headers.
+        max_length=max_length - 15,
+    )
+    output_messages = []
+
+    for message_chunk in split_messages:
+        if code_block_language is not None:
+            message_chunk = f"```{code_block_language}\n" + message_chunk
+            code_block_language = None
+
+        code_block_language = (
+            get_unclosed_code_block_language(message_chunk)
+        )
+        if code_block_language is not None:
+            message_chunk += "\n```"
+
+        output_messages.append(message_chunk)
+    
+    return output_messages
+
