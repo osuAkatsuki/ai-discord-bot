@@ -467,10 +467,6 @@ async def transcript(
         )
 
 
-TRUNCATION_SUFFIX = " (truncated)"
-TRUNCATION_SUFFIX_LENGTH = len(TRUNCATION_SUFFIX)
-
-
 @command_tree.command(name=command_name("query"))
 async def query(
     interaction: discord.Interaction,
@@ -478,6 +474,8 @@ async def query(
     model: gpt.OpenAIModel = gpt.OpenAIModel.GPT_4_OMNI,
 ):
     """Query a model without any context."""
+
+    await interaction.response.defer()
 
     result = await ai_conversations.send_message_without_context(
         bot,
