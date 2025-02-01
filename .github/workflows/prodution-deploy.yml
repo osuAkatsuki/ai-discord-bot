@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - realistik-changes
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
