@@ -1,71 +1,53 @@
 # https://openai.com/pricing
 from app.adapters.openai.gpt import OpenAIModel
+from app.adapters.openai.gpt import DeepSeekAIModel
+from app.adapters.openai.gpt import AIModel
 
 
-def input_price_per_million_tokens(model: OpenAIModel) -> float:
+def input_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case OpenAIModel.GPT_4_OMNI:
-            return 5.00
-        case (
-            OpenAIModel.GPT_4_TURBO_PREVIEW
-            | OpenAIModel.GPT_4_0125_PREVIEW
-            | OpenAIModel.GPT_4_1106_PREVIEW
-            | OpenAIModel.GPT_4_1106_VISION_PREVIEW
-        ):
-            return 10.00
-        case OpenAIModel.GPT_4:
-            return 30.00
-        case OpenAIModel.GPT_4_32K:
-            return 60.00
-        case OpenAIModel.GPT_3_5_TURBO | OpenAIModel.GPT_3_5_TURBO_0125:
-            return 0.50
-        case OpenAIModel.GPT_3_5_TURBO_INSTRUCT:
-            return 1.50
-        case OpenAIModel.GPT_3_5_TURBO_1106:
-            return 1.00
-        case OpenAIModel.GPT_3_5_TURBO_0613:
-            return 1.50
-        case OpenAIModel.GPT_3_5_TURBO_16K_0613:
-            return 3.00
-        case OpenAIModel.GPT_3_5_TURBO_0301:
-            return 1.50
+            return 2.50
+        # Not listed on the pricing page
+        case OpenAIModel.CHATGPT_4O_LATEST:
+            return 2.50
+        case OpenAIModel.GPT_O1:
+            return 15.00
+        case OpenAIModel.GPT_O1_MINI:
+            return 1.10
+        case OpenAIModel.GPT_O3_MINI:
+            return 1.10
+        case DeepSeekAIModel.DEEPSEEK_CHAT:
+            return 0.27
+        case DeepSeekAIModel.DEEPSEEK_REASONER:
+            return 0.55
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
 
 
-def output_price_per_million_tokens(model: OpenAIModel) -> float:
+def output_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case OpenAIModel.GPT_4_OMNI:
-            return 15.00
-        case (
-            OpenAIModel.GPT_4_TURBO_PREVIEW
-            | OpenAIModel.GPT_4_0125_PREVIEW
-            | OpenAIModel.GPT_4_1106_PREVIEW
-            | OpenAIModel.GPT_4_1106_VISION_PREVIEW
-        ):
-            return 30.00
-        case OpenAIModel.GPT_4:
+            return 10.00
+        # Not listed on the pricing page
+        case OpenAIModel.CHATGPT_4O_LATEST:
+            return 10.00
+        case OpenAIModel.GPT_O1:
             return 60.00
-        case OpenAIModel.GPT_4_32K:
-            return 120.00
-        case OpenAIModel.GPT_3_5_TURBO | OpenAIModel.GPT_3_5_TURBO_0125:
-            return 1.50
-        case OpenAIModel.GPT_3_5_TURBO_INSTRUCT:
-            return 2.00
-        case OpenAIModel.GPT_3_5_TURBO_1106:
-            return 2.00
-        case OpenAIModel.GPT_3_5_TURBO_0613:
-            return 2.00
-        case OpenAIModel.GPT_3_5_TURBO_16K_0613:
-            return 4.00
-        case OpenAIModel.GPT_3_5_TURBO_0301:
-            return 2.00
+        case OpenAIModel.GPT_O1_MINI:
+            return 4.40
+        case OpenAIModel.GPT_O3_MINI:
+            return 4.40
+        case DeepSeekAIModel.DEEPSEEK_CHAT:
+            return 1.10
+        case DeepSeekAIModel.DEEPSEEK_REASONER:
+            return 2.19
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
 
 
 def tokens_to_dollars(
-    model: OpenAIModel,
+    model: AIModel,
     input_tokens: int,
     output_tokens: int,
 ) -> float:

@@ -72,7 +72,7 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[int, dict[gpt.OpenAIModel, int]] = (
+    per_user_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = (
         defaultdict(lambda: defaultdict(int))
     )
     for message in messages:
@@ -371,7 +371,7 @@ async def summarize(
 @command_tree.command(name=command_name("ai"))
 async def ai(
     interaction: discord.Interaction,
-    model: gpt.OpenAIModel = gpt.DeepSeekAIModel.DEEPSEEK_REASONER,
+    model: gpt.AIModel = gpt.DeepSeekAIModel.DEEPSEEK_REASONER,
 ):
     if (
         interaction.channel is not None
@@ -471,7 +471,7 @@ async def transcript(
 async def query(
     interaction: discord.Interaction,
     query: str,
-    model: gpt.OpenAIModel = gpt.DeepSeekAIModel.DEEPSEEK_REASONER,
+    model: gpt.AIModel = gpt.DeepSeekAIModel.DEEPSEEK_REASONER,
 ):
     """Query a model without any context."""
 
