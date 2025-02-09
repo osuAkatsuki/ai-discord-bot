@@ -56,7 +56,7 @@ async def _make_gpt_request(
 ) -> _GptRequestResponse | Error:
     functions = openai_functions.get_full_openai_functions_schema()
     try:
-        gpt_response = await gpt.send(
+        gpt_response = await gpt.send_gpt(
             model=model,
             messages=message_history,
             functions=functions,
@@ -111,7 +111,7 @@ async def _make_gpt_request(
             }
         )
         try:
-            gpt_response = await gpt.send(
+            gpt_response = await gpt.send_gpt(
                 model=model,
                 messages=message_history,
             )
