@@ -1,7 +1,7 @@
 # https://openai.com/pricing
-from app.adapters.openai.gpt import OpenAIModel
-from app.adapters.openai.gpt import DeepSeekAIModel
 from app.adapters.openai.gpt import AIModel
+from app.adapters.openai.gpt import DeepSeekAIModel
+from app.adapters.openai.gpt import OpenAIModel
 
 
 def input_price_per_million_tokens(model: AIModel) -> float:
