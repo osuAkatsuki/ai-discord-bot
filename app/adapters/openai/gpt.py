@@ -98,4 +98,3 @@ async def send(
         return await deepseek_client.chat.completions.create(**kwargs)
 
     return await openai_client.chat.completions.create(**kwargs)
-

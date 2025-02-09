@@ -72,8 +72,8 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = (
-        defaultdict(lambda: defaultdict(int))
+    per_user_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = defaultdict(
+        lambda: defaultdict(int)
     )
     for message in messages:
         if message.role != "user":
