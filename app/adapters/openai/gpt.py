@@ -16,6 +16,10 @@ VALID_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".gif"}
 openai_client = openai.AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
 )
+deepseek_client = openai.AsyncOpenAI(
+    api_key=settings.DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com/v1"
+)
 
 
 class OpenAIModel(StrEnum):
@@ -37,6 +41,14 @@ class OpenAIModel(StrEnum):
     # pointers to the latest model from a given class
     GPT_4_TURBO_PREVIEW = "gpt-4-turbo-preview"
     GPT_3_5_TURBO = "gpt-3.5-turbo"
+
+
+class DeepSeekAIModel(StrEnum):
+    DEEPSEEK_CHAT = "deepseek-chat"
+    DEEPSEEK_REASONER = "deepseek-reasoner"
+
+
+type AIModel = DeepSeekAIModel | OpenAIModel
 
 
 class TextMessage(TypedDict):
@@ -82,7 +94,7 @@ class FunctionSchema(TypedDict):
 
 async def send(
     *,
-    model: OpenAIModel,
+    model: AIModel,
     messages: Sequence[Message],
     functions: Sequence[FunctionSchema] | None = None,
 ) -> ChatCompletion:
@@ -95,5 +107,8 @@ async def send(
     if functions is not None:
         kwargs["functions"] = functions
 
-    response = await openai_client.chat.completions.create(**kwargs)
-    return response
+    if isinstance(model, DeepSeekAIModel):
+        return await deepseek_client.chat.completions.create(**kwargs)
+
+    return await openai_client.chat.completions.create(**kwargs)
+
