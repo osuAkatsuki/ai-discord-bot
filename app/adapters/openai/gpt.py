@@ -18,24 +18,21 @@ openai_client = openai.AsyncOpenAI(
 )
 deepseek_client = openai.AsyncOpenAI(
     api_key=settings.DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com/v1"
+    base_url="https://api.deepseek.com/v1",
 )
 
 
-class OpenAIModel(StrEnum):
-    GPT_4_OMNI = "gpt-4o"
-    CHATGPT_4O_LATEST = "chatgpt-4o-latest"
-    GPT_O1 = "o1"
-    GPT_O1_MINI = "o1-mini"
-    GPT_O3_MINI = "o3-mini"
+class AIModel(StrEnum):
+    # OpenAI
+    OPENAI_GPT_4_OMNI = "gpt-4o"
+    OPENAI_CHATGPT_4O_LATEST = "chatgpt-4o-latest"
+    OPENAI_GPT_O1 = "o1"
+    OPENAI_GPT_O1_MINI = "o1-mini"
+    OPENAI_GPT_O3_MINI = "o3-mini"
 
-
-class DeepSeekAIModel(StrEnum):
+    # DeepSeek
     DEEPSEEK_CHAT = "deepseek-chat"
     DEEPSEEK_REASONER = "deepseek-reasoner"
-
-
-type AIModel = DeepSeekAIModel | OpenAIModel
 
 
 class TextMessage(TypedDict):
@@ -94,7 +91,15 @@ async def send(
     if functions is not None:
         kwargs["functions"] = functions
 
-    if isinstance(model, DeepSeekAIModel):
+    if model in {AIModel.DEEPSEEK_CHAT, AIModel.DEEPSEEK_REASONER}:
         return await deepseek_client.chat.completions.create(**kwargs)
-
-    return await openai_client.chat.completions.create(**kwargs)
+    elif model in {
+        AIModel.OPENAI_CHATGPT_4O_LATEST,
+        AIModel.OPENAI_GPT_4_OMNI,
+        AIModel.OPENAI_GPT_O1,
+        AIModel.OPENAI_GPT_O1_MINI,
+        AIModel.OPENAI_GPT_O3_MINI,
+    }:
+        return await openai_client.chat.completions.create(**kwargs)
+    else:
+        raise NotImplementedError(f"Unsupported model: {model}")

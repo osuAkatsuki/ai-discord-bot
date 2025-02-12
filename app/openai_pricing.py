@@ -1,25 +1,23 @@
 # https://openai.com/pricing
 from app.adapters.openai.gpt import AIModel
-from app.adapters.openai.gpt import DeepSeekAIModel
-from app.adapters.openai.gpt import OpenAIModel
 
 
 def input_price_per_million_tokens(model: AIModel) -> float:
     match model:
-        case OpenAIModel.GPT_4_OMNI:
+        case AIModel.OPENAI_GPT_4_OMNI:
             return 2.50
         # Not listed on the pricing page
-        case OpenAIModel.CHATGPT_4O_LATEST:
+        case AIModel.OPENAI_CHATGPT_4O_LATEST:
             return 2.50
-        case OpenAIModel.GPT_O1:
+        case AIModel.OPENAI_GPT_O1:
             return 15.00
-        case OpenAIModel.GPT_O1_MINI:
+        case AIModel.OPENAI_GPT_O1_MINI:
             return 1.10
-        case OpenAIModel.GPT_O3_MINI:
+        case AIModel.OPENAI_GPT_O3_MINI:
             return 1.10
-        case DeepSeekAIModel.DEEPSEEK_CHAT:
+        case AIModel.DEEPSEEK_CHAT:
             return 0.27
-        case DeepSeekAIModel.DEEPSEEK_REASONER:
+        case AIModel.DEEPSEEK_REASONER:
             return 0.55
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
@@ -27,20 +25,20 @@ def input_price_per_million_tokens(model: AIModel) -> float:
 
 def output_price_per_million_tokens(model: AIModel) -> float:
     match model:
-        case OpenAIModel.GPT_4_OMNI:
+        case AIModel.OPENAI_GPT_4_OMNI:
             return 10.00
         # Not listed on the pricing page
-        case OpenAIModel.CHATGPT_4O_LATEST:
+        case AIModel.OPENAI_CHATGPT_4O_LATEST:
             return 10.00
-        case OpenAIModel.GPT_O1:
+        case AIModel.OPENAI_GPT_O1:
             return 60.00
-        case OpenAIModel.GPT_O1_MINI:
+        case AIModel.OPENAI_GPT_O1_MINI:
             return 4.40
-        case OpenAIModel.GPT_O3_MINI:
+        case AIModel.OPENAI_GPT_O3_MINI:
             return 4.40
-        case DeepSeekAIModel.DEEPSEEK_CHAT:
+        case AIModel.DEEPSEEK_CHAT:
             return 1.10
-        case DeepSeekAIModel.DEEPSEEK_REASONER:
+        case AIModel.DEEPSEEK_REASONER:
             return 2.19
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
