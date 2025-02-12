@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app import state
-from app.adapters.openai.gpt import OpenAIModel
+from app.adapters.openai.gpt import AIModel
 
 READ_PARAMS = """\
     thread_id,
@@ -19,7 +19,7 @@ READ_PARAMS = """\
 class Thread(BaseModel):
     thread_id: int
     initiator_user_id: int
-    model: OpenAIModel
+    model: AIModel
     context_length: int
     created_at: datetime
 
@@ -28,7 +28,7 @@ def deserialize(rec: Mapping[str, Any]) -> Thread:
     return Thread(
         thread_id=rec["thread_id"],
         initiator_user_id=rec["initiator_user_id"],
-        model=OpenAIModel(rec["model"]),
+        model=AIModel(rec["model"]),
         context_length=rec["context_length"],
         created_at=rec["created_at"],
     )
@@ -37,7 +37,7 @@ def deserialize(rec: Mapping[str, Any]) -> Thread:
 async def create(
     thread_id: int,
     initiator_user_id: int,
-    model: OpenAIModel,
+    model: AIModel,
     context_length: int,
 ) -> Thread:
     query = f"""\
@@ -69,7 +69,7 @@ async def fetch_one(thread_id: int) -> Thread | None:
 
 async def fetch_many(
     initiator_user_id: int | None = None,
-    model: OpenAIModel | None = None,
+    model: AIModel | None = None,
     context_length: int | None = None,
     page: int | None = None,
     page_size: int | None = None,
@@ -97,7 +97,7 @@ async def fetch_many(
 async def partial_update(
     thread_id: int,
     initiator_user_id: int | None = None,
-    model: OpenAIModel | None = None,
+    model: AIModel | None = None,
     context_length: int | None = None,
 ) -> Thread | None:
     query = f"""\

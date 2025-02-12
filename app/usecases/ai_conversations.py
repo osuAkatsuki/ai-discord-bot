@@ -52,7 +52,7 @@ class _GptRequestResponse(NamedTuple):
 
 
 async def _make_gpt_request(
-    message_history: list[gpt.Message], model: gpt.OpenAIModel
+    message_history: list[gpt.Message], model: gpt.AIModel
 ) -> _GptRequestResponse | Error:
     functions = openai_functions.get_full_openai_functions_schema()
     try:
@@ -278,7 +278,7 @@ async def send_message_without_context(
     bot: DiscordBot,
     interaction: discord.Interaction,
     message_content: str,
-    model: gpt.OpenAIModel,
+    model: gpt.AIModel,
 ) -> SendAndReceiveResponse | Error:
     if bot.user is None:
         return Error(

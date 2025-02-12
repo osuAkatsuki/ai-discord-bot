@@ -72,8 +72,8 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[int, dict[gpt.OpenAIModel, int]] = (
-        defaultdict(lambda: defaultdict(int))
+    per_user_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = defaultdict(
+        lambda: defaultdict(int)
     )
     for message in messages:
         if message.role != "user":
@@ -178,7 +178,7 @@ async def threadcost(interaction: discord.Interaction):
 @command_tree.command(name=command_name("model"))
 async def model(
     interaction: discord.Interaction,
-    model: gpt.OpenAIModel,
+    model: gpt.AIModel,
 ):
     if not isinstance(interaction.channel, discord.Thread):
         await interaction.followup.send(
@@ -345,7 +345,7 @@ async def summarize(
 
     try:
         gpt_response = await gpt.send(
-            model=gpt.OpenAIModel.GPT_4_OMNI,
+            model=gpt.AIModel.OPENAI_GPT_4_OMNI,
             messages=messages,
         )
     except Exception as exc:
@@ -371,7 +371,7 @@ async def summarize(
 @command_tree.command(name=command_name("ai"))
 async def ai(
     interaction: discord.Interaction,
-    model: gpt.OpenAIModel = gpt.OpenAIModel.GPT_4_OMNI,
+    model: gpt.AIModel = gpt.AIModel.OPENAI_GPT_4_OMNI,
 ):
     if (
         interaction.channel is not None
@@ -471,7 +471,7 @@ async def transcript(
 async def query(
     interaction: discord.Interaction,
     query: str,
-    model: gpt.OpenAIModel = gpt.OpenAIModel.GPT_4_OMNI,
+    model: gpt.AIModel = gpt.AIModel.OPENAI_GPT_4_OMNI,
 ):
     """Query a model without any context."""
 
