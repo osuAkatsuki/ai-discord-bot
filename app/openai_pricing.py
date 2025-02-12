@@ -1,4 +1,8 @@
-# https://openai.com/pricing
+# TODO: see if we can fetch these prices on the fly from
+# the respective APIs, as they may change frequently, and
+# without notice.
+# - https://openai.com/api/pricing/
+# - https://api-docs.deepseek.com/quick_start/pricing/
 from app.adapters.openai.gpt import AIModel
 
 
@@ -6,7 +10,8 @@ def input_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case AIModel.OPENAI_GPT_4_OMNI:
             return 2.50
-        # Not listed on the pricing page
+        # Not directly listed on the pricing page
+        # (as the latest model is often changing)
         case AIModel.OPENAI_CHATGPT_4O_LATEST:
             return 2.50
         case AIModel.OPENAI_GPT_O1:
@@ -27,7 +32,8 @@ def output_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case AIModel.OPENAI_GPT_4_OMNI:
             return 10.00
-        # Not listed on the pricing page
+        # Not directly listed on the pricing page
+        # (as the latest model is often changing)
         case AIModel.OPENAI_CHATGPT_4O_LATEST:
             return 10.00
         case AIModel.OPENAI_GPT_O1:
