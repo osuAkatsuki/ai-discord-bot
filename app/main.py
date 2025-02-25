@@ -472,17 +472,26 @@ async def query(
     interaction: discord.Interaction,
     query: str,
     model: gpt.AIModel = gpt.AIModel.OPENAI_GPT_4_OMNI,
+    use_context: bool = True,
 ):
     """Query a model without any context."""
 
     await interaction.response.defer()
 
-    result = await ai_conversations.send_message_without_context(
-        bot,
-        interaction,
-        query,
-        model,
-    )
+    if use_context:
+        result = await ai_conversations.send_message_with_personal_context(
+            bot,
+            interaction,
+            query,
+            model,
+        )
+    else:
+        result = await ai_conversations.send_message_without_context(
+            bot,
+            interaction,
+            query,
+            model,
+        )
 
     # I do not think interactions allow multiple messages.
     messages_to_send: list[str] = []
