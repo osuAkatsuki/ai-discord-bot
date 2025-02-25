@@ -96,10 +96,10 @@ async def fetch_created_before(user_id: int, created_at: datetime) -> list[Perso
     return [deserialize(record) for record in records]
 
 
-async def delete_from_user_id(user_id: int) -> None:
+async def delete_from_user_id(user_id: int) -> int:
     query = f"""\
         DELETE FROM personal_messages
         WHERE user_id = :user_id
     """
     values = {"user_id": user_id}
-    await state.write_database.execute(query=query, values=values)
+    return await state.write_database.execute(query=query, values=values)

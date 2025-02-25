@@ -23,6 +23,7 @@ from app import settings
 from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
+from app.repositories import personal_messages
 
 
 LOGGER = logging.getLogger(__name__)
@@ -475,6 +476,12 @@ async def query(
     use_context: bool = True,
 ):
     """Query a model without any context."""
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
 
     await interaction.response.defer()
 
@@ -503,6 +510,21 @@ async def query(
     # I have no idea whether they actually allow you to send multiple follow-ups.
     for message_text in messages_to_send:
         await interaction.followup.send(message_text)
+
+
+@command_tree.command(name=command_name("clear_context"))
+async def clear_context(interaction: discord.Interaction):
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command",
+            ephemeral=True,
+        )
+        return
+    
+    await interaction.response.defer()
+    deleted_messages = await personal_messages.delete_from_user_id(interaction.user.id)
+
+    await interaction.followup.send(f"Context cleared (deleted {deleted_messages} messages)!")
 
 
 if __name__ == "__main__":
