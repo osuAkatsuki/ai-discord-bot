@@ -520,11 +520,13 @@ async def clear_context(interaction: discord.Interaction):
             ephemeral=True,
         )
         return
-    
+
     await interaction.response.defer()
     deleted_messages = await personal_messages.delete_from_user_id(interaction.user.id)
 
-    await interaction.followup.send(f"Context cleared (deleted {deleted_messages} messages)!")
+    await interaction.followup.send(
+        f"Context cleared (deleted {deleted_messages} messages)!"
+    )
 
 
 if __name__ == "__main__":

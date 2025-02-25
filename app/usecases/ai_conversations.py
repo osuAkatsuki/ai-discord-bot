@@ -12,9 +12,9 @@ from app.adapters.openai.gpt import MessageContent
 from app.errors import Error
 from app.errors import ErrorCode
 from app.models import DiscordBot
+from app.repositories import personal_messages
 from app.repositories import thread_messages
 from app.repositories import threads
-from app.repositories import personal_messages
 
 
 DISCORD_USER_ID_WHITELIST: set[int] = {
@@ -329,7 +329,9 @@ async def send_message_without_context(
     )
     return SendAndReceiveResponse(response_messages=response_messages)
 
+
 PERSONAL_CONTEXT_SIZE = 5
+
 
 async def send_message_with_personal_context(
     bot: DiscordBot,
@@ -373,7 +375,7 @@ async def send_message_with_personal_context(
             "role": "user",
             "content": [{"type": "text", "text": prompt}],
         }
-    ] # type: ignore
+    ]  # type: ignore
     # TODO: fix type error?
 
     gpt_response = await _make_gpt_request(
@@ -382,7 +384,7 @@ async def send_message_with_personal_context(
     )
     if isinstance(gpt_response, Error):
         return gpt_response
-    
+
     # Log the user message
     await personal_messages.create(
         user_id=interaction.user.id,

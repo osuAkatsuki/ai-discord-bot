@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Literal
-from typing import Mapping
 
 from pydantic import BaseModel
 
@@ -85,7 +85,9 @@ async def fetch_last_n(user_id: int, n: int) -> list[PersonalMessage]:
     return [deserialize(record) for record in records]
 
 
-async def fetch_created_before(user_id: int, created_at: datetime) -> list[PersonalMessage]:
+async def fetch_created_before(
+    user_id: int, created_at: datetime
+) -> list[PersonalMessage]:
     query = f"""\
         SELECT {READ_PARAMS}
         FROM personal_messages
