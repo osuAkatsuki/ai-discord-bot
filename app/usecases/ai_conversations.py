@@ -14,6 +14,7 @@ from app.errors import ErrorCode
 from app.models import DiscordBot
 from app.repositories import thread_messages
 from app.repositories import threads
+from app.repositories import personal_messages
 
 
 DISCORD_USER_ID_WHITELIST: set[int] = {
@@ -319,6 +320,82 @@ async def send_message_without_context(
         return gpt_response
 
     # TODO: Track input and output tokens here.
+
+    response_messages: list[str] = (
+        discord_message_utils.smart_split_message_into_chunks(
+            gpt_response.response_content,
+            max_length=2000,
+        )
+    )
+    return SendAndReceiveResponse(response_messages=response_messages)
+
+PERSONAL_CONTEXT_SIZE = 5
+
+async def send_message_with_personal_context(
+    bot: DiscordBot,
+    interaction: discord.Interaction,
+    message_content: str,
+    model: gpt.AIModel,
+) -> SendAndReceiveResponse | Error:
+    if bot.user is None:
+        return Error(
+            code=ErrorCode.NOT_READY,
+            messages=["The server is not ready to handle requests"],
+        )
+
+    if interaction.user.id == bot.user.id:
+        return Error(code=ErrorCode.SKIP, messages=[])
+
+    if interaction.user.id not in DISCORD_USER_ID_WHITELIST:
+        return Error(
+            code=ErrorCode.UNAUTHORIZED,
+            messages=["User is not authorised to use this bot"],
+        )
+
+    author_name = get_author_name(interaction.user.name)
+    prompt = f"{author_name}: {message_content}"
+
+    # Retrieve past context
+    personal_context = await personal_messages.fetch_last_n(
+        user_id=interaction.user.id,
+        n=PERSONAL_CONTEXT_SIZE,
+    )
+
+    # Build the message history
+    message_history: list[gpt.Message] = [
+        {
+            "role": m.role,
+            "content": [{"type": "text", "text": m.content}],
+        }
+        for m in personal_context
+    ] + [
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": prompt}],
+        }
+    ] # type: ignore
+    # TODO: fix type error?
+
+    gpt_response = await _make_gpt_request(
+        message_history,
+        model,
+    )
+    if isinstance(gpt_response, Error):
+        return gpt_response
+    
+    # Log the user message
+    await personal_messages.create(
+        user_id=interaction.user.id,
+        content=message_content,
+        role="user",
+        tokens_used=gpt_response.input_tokens,
+    )
+    await personal_messages.create(
+        user_id=interaction.user.id,
+        content=gpt_response.response_content,
+        role="assistant",
+        tokens_used=gpt_response.output_tokens,
+    )
 
     response_messages: list[str] = (
         discord_message_utils.smart_split_message_into_chunks(

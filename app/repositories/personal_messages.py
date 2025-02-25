@@ -83,3 +83,14 @@ async def fetch_last_n(user_id: int, n: int) -> list[PersonalMessage]:
     values = {"user_id": user_id, "n": n}
     records = await state.read_database.fetch_all(query=query, values=values)
     return [deserialize(record) for record in records]
+
+
+async def fetch_created_before(user_id: int, created_at: datetime) -> list[PersonalMessage]:
+    query = f"""\
+        SELECT {READ_PARAMS}
+        FROM personal_messages
+        WHERE user_id = :user_id AND created_at < :created_at
+    """
+    values = {"user_id": user_id, "created_at": created_at}
+    records = await state.read_database.fetch_all(query=query, values=values)
+    return [deserialize(record) for record in records]

@@ -3,8 +3,8 @@ CREATE TABLE personal_messages (
     user_id BIGINT NOT NULL,
     content TEXT NOT NULL,
     role TEXT NOT NULL,
-    -- Input tokens, sus but thread_messages does it lol.
     -- Perhaps use a "source" enum to differentiate between user input and bot output?
+    -- Will let us use injecting system messages.
     tokens_used INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
