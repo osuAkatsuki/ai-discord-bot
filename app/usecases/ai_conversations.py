@@ -31,6 +31,7 @@ DISCORD_USER_ID_WHITELIST: set[int] = {
     190278149030936576,  # randomize
     249596453457100801,  # mistral
     151670779782758400,  # aesth
+    109493893803819008,  # jackson
     # Super
     332722012877357066,  # fkzoink
 }
