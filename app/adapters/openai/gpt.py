@@ -25,10 +25,9 @@ deepseek_client = openai.AsyncOpenAI(
 class AIModel(StrEnum):
     # OpenAI
     OPENAI_GPT_4_OMNI = "gpt-4o"
-    OPENAI_CHATGPT_4O_LATEST = "chatgpt-4o-latest"
-    OPENAI_GPT_O1 = "o1"
-    OPENAI_GPT_O1_MINI = "o1-mini"
-    OPENAI_GPT_O3_MINI = "o3-mini"
+    OPENAI_GPT_O3 = "o3"
+    OPENAI_GPT_O3_PRO = "o3-pro"
+    OPENAI_GPT_O4_MINI = "o4-mini"
 
     # DeepSeek
     DEEPSEEK_CHAT = "deepseek-chat"
@@ -94,11 +93,10 @@ async def send(
     if model in {AIModel.DEEPSEEK_CHAT, AIModel.DEEPSEEK_REASONER}:
         return await deepseek_client.chat.completions.create(**kwargs)
     elif model in {
-        AIModel.OPENAI_CHATGPT_4O_LATEST,
         AIModel.OPENAI_GPT_4_OMNI,
-        AIModel.OPENAI_GPT_O1,
-        AIModel.OPENAI_GPT_O1_MINI,
-        AIModel.OPENAI_GPT_O3_MINI,
+        AIModel.OPENAI_GPT_O3,
+        AIModel.OPENAI_GPT_O3_PRO,
+        AIModel.OPENAI_GPT_O4_MINI,
     }:
         return await openai_client.chat.completions.create(**kwargs)
     else:

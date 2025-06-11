@@ -10,15 +10,11 @@ def input_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case AIModel.OPENAI_GPT_4_OMNI:
             return 2.50
-        # Not directly listed on the pricing page
-        # (as the latest model is often changing)
-        case AIModel.OPENAI_CHATGPT_4O_LATEST:
-            return 2.50
-        case AIModel.OPENAI_GPT_O1:
-            return 15.00
-        case AIModel.OPENAI_GPT_O1_MINI:
-            return 1.10
-        case AIModel.OPENAI_GPT_O3_MINI:
+        case AIModel.OPENAI_GPT_O3:
+            return 2.00
+        case AIModel.OPENAI_GPT_O3_PRO:
+            return 20.00
+        case AIModel.OPENAI_GPT_O4_MINI:
             return 1.10
         case AIModel.DEEPSEEK_CHAT:
             return 0.27
@@ -32,15 +28,11 @@ def output_price_per_million_tokens(model: AIModel) -> float:
     match model:
         case AIModel.OPENAI_GPT_4_OMNI:
             return 10.00
-        # Not directly listed on the pricing page
-        # (as the latest model is often changing)
-        case AIModel.OPENAI_CHATGPT_4O_LATEST:
-            return 10.00
-        case AIModel.OPENAI_GPT_O1:
-            return 60.00
-        case AIModel.OPENAI_GPT_O1_MINI:
-            return 4.40
-        case AIModel.OPENAI_GPT_O3_MINI:
+        case AIModel.OPENAI_GPT_O3:
+            return 8.00
+        case AIModel.OPENAI_GPT_O3_PRO:
+            return 80.00
+        case AIModel.OPENAI_GPT_O4_MINI:
             return 4.40
         case AIModel.DEEPSEEK_CHAT:
             return 1.10
