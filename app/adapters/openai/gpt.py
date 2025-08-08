@@ -28,6 +28,8 @@ class AIModel(StrEnum):
     OPENAI_GPT_O3 = "o3"
     OPENAI_GPT_O3_PRO = "o3-pro"
     OPENAI_GPT_O4_MINI = "o4-mini"
+    OPENAI_GPT_5 = "gpt-5"
+    OPENAI_GPT_5_MINI = "gpt-5-mini"
 
     # DeepSeek
     DEEPSEEK_CHAT = "deepseek-chat"

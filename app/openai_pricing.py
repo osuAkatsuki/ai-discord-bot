@@ -20,6 +20,10 @@ def input_price_per_million_tokens(model: AIModel) -> float:
             return 0.27
         case AIModel.DEEPSEEK_REASONER:
             return 0.55
+        case AIModel.OPENAI_GPT_5_MINI:
+            return 0.25
+        case AIModel.OPENAI_GPT_5:
+            return 1.25
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
 
@@ -38,6 +42,10 @@ def output_price_per_million_tokens(model: AIModel) -> float:
             return 1.10
         case AIModel.DEEPSEEK_REASONER:
             return 2.19
+        case AIModel.OPENAI_GPT_5_MINI:
+            return 2.00
+        case AIModel.OPENAI_GPT_5:
+            return 10.00
         case _:
             raise NotImplementedError(f"Unknown model: {model}")
 
