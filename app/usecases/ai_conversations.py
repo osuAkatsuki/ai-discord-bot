@@ -15,7 +15,6 @@ from app.models import DiscordBot
 from app.repositories import thread_messages
 from app.repositories import threads
 
-
 DISCORD_USER_ID_WHITELIST: set[int] = {
     # Akatsuki
     285190493703503872,  # cmyui
