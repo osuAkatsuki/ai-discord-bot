@@ -82,6 +82,7 @@ async def fetch_many(
     created_at_gte: datetime | None = None,
     page: int | None = None,
     page_size: int | None = None,
+    sort_order: Literal["asc", "desc"] = "asc",
 ) -> list[ThreadMessage]:
     query = f"""\
         SELECT {READ_PARAMS}
@@ -96,10 +97,12 @@ async def fetch_many(
         "role": role,
     }
     if created_at_gte is not None:
-        query += "AND created_at >= :created_at_gte"
+        query += " AND created_at >= :created_at_gte"
         values["created_at_gte"] = created_at_gte
+    order_sql = "DESC" if sort_order == "desc" else "ASC"
+    query += f" ORDER BY created_at {order_sql}, thread_message_id {order_sql}"
     if page is not None and page_size is not None:
-        query += "LIMIT :page_size OFFSET :offset"
+        query += " LIMIT :page_size OFFSET :offset"
         values["page_size"] = page_size
         values["offset"] = (page - 1) * page_size
     recs = await state.read_database.fetch_all(query, values)

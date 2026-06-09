@@ -78,10 +78,8 @@ class Database:
 
     async def connect(self) -> None:
         await self.pool.connect()
-        await self.pool.connect()
 
     async def disconnect(self) -> None:
-        await self.pool.disconnect()
         await self.pool.disconnect()
 
     async def fetch_one(

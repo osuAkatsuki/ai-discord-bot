@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import pytest
@@ -5,6 +6,14 @@ import pytest
 from app import openai_functions
 from app.adapters.openai import gpt
 from app.usecases import ai_conversations
+
+
+def test_get_author_name_uses_stable_pseudonym():
+    author_name = ai_conversations.get_author_name(285190493703503872)
+
+    assert re.fullmatch(r"User #[0-9a-f]{8}", author_name)
+    assert author_name == ai_conversations.get_author_name(285190493703503872)
+    assert author_name != ai_conversations.get_author_name(285190493703503873)
 
 
 def test_message_content_from_prompt_includes_urls_and_attachments():

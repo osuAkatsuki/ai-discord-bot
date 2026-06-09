@@ -152,14 +152,13 @@ async def get_weather_for_location(
         params={
             "latitude": latitude,
             "longitude": longitude,
-            "hourly": "temperature_2m",
-            "timeformat": "unixtime",
+            "current": "temperature_2m",
         },
     )
     response.raise_for_status()
     response_data = response.json()
 
-    degrees_celcius = response_data["hourly"]["temperature_2m"][-1]
+    degrees_celcius = response_data["current"]["temperature_2m"]
     degrees_fahrenheit = celcius_to_fahrenheit(degrees_celcius)
 
     return {

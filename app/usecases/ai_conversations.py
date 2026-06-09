@@ -1,5 +1,6 @@
 import json
 import traceback
+from hashlib import sha256
 from typing import Any
 from typing import NamedTuple
 
@@ -38,13 +39,12 @@ DISCORD_USER_ID_WHITELIST: set[int] = {
 }
 
 
-def _get_author_id(author_name: str) -> int:
-    # get a 3 digit highly unique id
-    return hash(author_name) % 1000
+def _get_author_id(discord_user_id: int) -> str:
+    return sha256(str(discord_user_id).encode()).hexdigest()[:8]
 
 
-def get_author_name(discord_author_name: str) -> str:
-    return f"User #{_get_author_id(discord_author_name)}"
+def get_author_name(discord_user_id: int) -> str:
+    return f"User #{_get_author_id(discord_user_id)}"
 
 
 class _GptRequestResponse(NamedTuple):
@@ -194,7 +194,7 @@ async def send_message_to_thread(
     if prompt.startswith(f"{bot.user.mention} "):
         prompt = prompt.removeprefix(f"{bot.user.mention} ")
 
-    author_name = get_author_name(message.author.name)
+    author_name = get_author_name(message.author.id)
     prompt = f"{author_name}: {prompt}"
 
     async with message.channel.typing():

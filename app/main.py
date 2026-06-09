@@ -75,7 +75,7 @@ async def on_message(message: discord.Message):
         await message.channel.send(msg)
 
 
-async def _calculate_per_user_costs(
+async def _calculate_per_requester_costs(
     thread_id: int | None = None, created_at_gte: datetime | None = None
 ) -> dict[int, float]:
     messages = await thread_messages.fetch_many(
@@ -83,8 +83,8 @@ async def _calculate_per_user_costs(
         created_at_gte=created_at_gte,
     )
     threads_cache: dict[int, threads.Thread] = {}
-    per_user_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = defaultdict(
-        lambda: defaultdict(int)
+    per_requester_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = (
+        defaultdict(lambda: defaultdict(int))
     )
     for message in messages:
         if message.role != "user":
@@ -104,19 +104,19 @@ async def _calculate_per_user_costs(
             threads_cache[thread_id] = thread
 
         user_id = message.discord_user_id
-        per_model_input_tokens = per_user_per_model_input_tokens[user_id]
+        per_model_input_tokens = per_requester_per_model_input_tokens[user_id]
         per_model_input_tokens[thread.model] += message.tokens_used
 
-    per_user_cost: dict[int, float] = defaultdict(float)
-    for user_id, per_model_tokens in per_user_per_model_input_tokens.items():
+    per_requester_cost: dict[int, float] = defaultdict(float)
+    for user_id, per_model_tokens in per_requester_per_model_input_tokens.items():
         for model, input_tokens in per_model_tokens.items():
-            user_cost = per_user_cost[user_id]
-            user_cost += openai_pricing.tokens_to_dollars(
+            requester_cost = per_requester_cost[user_id]
+            requester_cost += openai_pricing.tokens_to_dollars(
                 model, input_tokens, output_tokens=0
             )
-            per_user_cost[user_id] = user_cost
+            per_requester_cost[user_id] = requester_cost
 
-    return per_user_cost
+    return per_requester_cost
 
 
 @command_tree.command(name=command_name("monthlycost"))
@@ -130,17 +130,18 @@ async def monthlycost(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-    per_user_cost = await _calculate_per_user_costs(
+    per_requester_cost = await _calculate_per_requester_costs(
         created_at_gte=datetime.now() - timedelta(days=30)
     )
-    response_cost = sum(per_user_cost.values())
+    response_cost = sum(per_requester_cost.values())
 
     message_chunks = [
-        "**Monthly Cost Breakdown**",
-        "**----------------------**",
+        "**Monthly Requester Cost Breakdown**",
+        "**--------------------------------**",
+        "Input cost is attributed to the user who sent each model request.",
         "",
     ]
-    for user_id, cost in per_user_cost.items():
+    for user_id, cost in per_requester_cost.items():
         user = await bot.fetch_user(user_id)
         message_chunks.append(f"{user.mention}: ${cost:.5f}")
 
@@ -168,15 +169,18 @@ async def threadcost(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-    per_user_cost = await _calculate_per_user_costs(thread_id=interaction.channel.id)
-    response_cost = sum(per_user_cost.values())
+    per_requester_cost = await _calculate_per_requester_costs(
+        thread_id=interaction.channel.id
+    )
+    response_cost = sum(per_requester_cost.values())
 
     message_chunks = [
-        "**Thread Cost Breakdown**",
-        "**---------------------**",
+        "**Thread Requester Cost Breakdown**",
+        "**-------------------------------**",
+        "Input cost is attributed to the user who sent each model request.",
         "",
     ]
-    for user_id, cost in per_user_cost.items():
+    for user_id, cost in per_requester_cost.items():
         user = await bot.fetch_user(user_id)
         message_chunks.append(f"{user.mention}: ${cost:.5f}")
 
@@ -192,7 +196,7 @@ async def model(
     model: gpt.AIModel,
 ):
     if not isinstance(interaction.channel, discord.Thread):
-        await interaction.followup.send(
+        await interaction.response.send_message(
             "This command can only be used in threads.",
             ephemeral=True,
         )
@@ -234,7 +238,7 @@ async def context(
     context_length: int,
 ):
     if not isinstance(interaction.channel, discord.Thread):
-        await interaction.followup.send(
+        await interaction.response.send_message(
             "This command can only be used in threads.",
             ephemeral=True,
         )
@@ -299,7 +303,7 @@ async def summarize(
 
     await interaction.response.defer()
 
-    limit = max(num_messages, MAX_CONTENT_LENGTH)
+    limit = min(num_messages, MAX_CONTENT_LENGTH)
 
     start_message_id = None
     if start_message is not None:
@@ -319,7 +323,7 @@ async def summarize(
         if not content:  # ignore empty messages (e.g. only images)
             continue
 
-        author_name = ai_conversations.get_author_name(message.author.name)
+        author_name = ai_conversations.get_author_name(message.author.id)
 
         if tracking:
             messages.append(
@@ -439,7 +443,7 @@ async def transcript(
     context_length: int | None = None,
 ):
     if not isinstance(interaction.channel, discord.Thread):
-        await interaction.followup.send(
+        await interaction.response.send_message(
             "This command can only be used in threads.",
             ephemeral=True,
         )
@@ -462,10 +466,18 @@ async def transcript(
         )
         return
 
-    current_thread_messages = await thread_messages.fetch_many(
-        thread_id=interaction.channel.id,
-        page_size=context_length,
-    )
+    if context_length is None:
+        current_thread_messages = await thread_messages.fetch_many(
+            thread_id=interaction.channel.id
+        )
+    else:
+        current_thread_messages = await thread_messages.fetch_many(
+            thread_id=interaction.channel.id,
+            page=1,
+            page_size=context_length,
+            sort_order="desc",
+        )
+        current_thread_messages = current_thread_messages[::-1]
 
     transcript_content = "\n".join(
         f"[{msg.created_at:%d/%m/%Y %I:%M:%S%p}] {msg.content}"
