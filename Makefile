@@ -1,9 +1,8 @@
 #!/usr/bin/make
 
 install:
-	python3.11 -m virtualenv venv
-	. venv/bin/activate
-	pip install -r requirements.txt -r requirements-dev.txt
+	python3.11 -m venv venv
+	venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 
 build: # build all containers
 	if [ -d "pgdata" ]; then sudo chmod -R 755 pgdata; fi
