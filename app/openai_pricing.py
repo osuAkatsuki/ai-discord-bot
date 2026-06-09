@@ -8,6 +8,14 @@ from app.adapters.openai.gpt import AIModel
 
 def input_price_per_million_tokens(model: AIModel) -> float:
     match model:
+        case AIModel.OPENAI_GPT_5_5:
+            return 5.00
+        case AIModel.OPENAI_GPT_5_4:
+            return 2.50
+        case AIModel.OPENAI_GPT_5_4_MINI:
+            return 0.75
+        case AIModel.OPENAI_GPT_5_4_NANO:
+            return 0.20
         case AIModel.OPENAI_GPT_4_OMNI:
             return 2.50
         case AIModel.OPENAI_GPT_O3:
@@ -30,6 +38,14 @@ def input_price_per_million_tokens(model: AIModel) -> float:
 
 def output_price_per_million_tokens(model: AIModel) -> float:
     match model:
+        case AIModel.OPENAI_GPT_5_5:
+            return 30.00
+        case AIModel.OPENAI_GPT_5_4:
+            return 15.00
+        case AIModel.OPENAI_GPT_5_4_MINI:
+            return 4.50
+        case AIModel.OPENAI_GPT_5_4_NANO:
+            return 1.25
         case AIModel.OPENAI_GPT_4_OMNI:
             return 10.00
         case AIModel.OPENAI_GPT_O3:

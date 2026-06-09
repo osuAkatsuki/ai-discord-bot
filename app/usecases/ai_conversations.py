@@ -1,5 +1,6 @@
 import json
 import traceback
+from typing import Any
 from typing import NamedTuple
 
 import discord
@@ -52,69 +53,24 @@ class _GptRequestResponse(NamedTuple):
     output_tokens: int
 
 
+MAX_FUNCTION_CALL_ROUNDS = 5
+
+
 async def _make_gpt_request(
     message_history: list[gpt.Message], model: gpt.AIModel
 ) -> _GptRequestResponse | Error:
     functions = openai_functions.get_full_openai_functions_schema()
-    try:
-        gpt_response = await gpt.send(
-            model=model,
-            messages=message_history,
-            functions=functions,
-        )
-    except Exception as exc:
-        traceback.print_exc()
-        # NOTE: this is *generally* bad practice to expose this information
-        # to end users, and should be removed if we are to deploy this app
-        # more widely. Right now it's okay because it's a private bot.
-        return Error(
-            code=ErrorCode.UNEXPECTED_ERROR,
-            messages=[
-                f"Request to OpenAI failed with the following error:\n```\n{exc}```"
-            ],
-        )
+    response_context_items: list[dict[str, Any]] = []
+    input_tokens = 0
+    output_tokens = 0
 
-    gpt_choice = gpt_response.choices[0]
-    gpt_message = gpt_choice.message
-
-    if gpt_choice.finish_reason == "stop":
-        assert gpt_message.content is not None
-        gpt_response_content: str = gpt_message.content
-        message_history.append(
-            {
-                "role": gpt_message.role,
-                "content": [
-                    {
-                        "type": "text",
-                        "text": gpt_message.content,
-                    }
-                ],
-            }
-        )
-    elif (
-        gpt_choice.finish_reason == "function_call"
-        and gpt_message.function_call is not None
-    ):
-        function_name = gpt_message.function_call.name
-        function_kwargs = json.loads(gpt_message.function_call.arguments)
-
-        ai_function = openai_functions.ai_functions[function_name]
-        function_response = await ai_function["callback"](**function_kwargs)
-
-        # send function response back to gpt for the final response
-        # TODO: could it call another function?
-        #       i think they may expect/support recursive calls
-        message_history.append(
-            {
-                "role": "function",
-                "name": function_name,
-                "content": [function_response],
-            }
-        )
+    for _ in range(MAX_FUNCTION_CALL_ROUNDS):
         try:
             gpt_response = await gpt.send(
                 model=model,
                 messages=message_history,
+                functions=functions,
+                response_context_items=response_context_items,
             )
         except Exception as exc:
             traceback.print_exc()
@@ -128,23 +84,77 @@ async def _make_gpt_request(
                 ],
             )
 
-        assert gpt_response.choices[0].message.content is not None
-        gpt_response_content = gpt_response.choices[0].message.content
+        input_tokens += gpt_response.input_tokens
+        output_tokens += gpt_response.output_tokens
 
-    else:
-        raise NotImplementedError(
-            f"Unknown chatgpt finish reason: {gpt_choice.finish_reason}"
-        )
+        if not gpt_response.function_calls:
+            assert gpt_response.response_content is not None
+            return _GptRequestResponse(
+                gpt_response.response_content,
+                input_tokens,
+                output_tokens,
+            )
 
-    assert gpt_response.usage is not None
-    input_tokens = gpt_response.usage.prompt_tokens
-    output_tokens = gpt_response.usage.completion_tokens
+        response_context_items.extend(gpt_response.response_items)
+        for function_call in gpt_response.function_calls:
+            function_kwargs = json.loads(function_call.arguments)
 
-    return _GptRequestResponse(
-        gpt_response_content,
-        input_tokens,
-        output_tokens,
+            ai_function = openai_functions.ai_functions[function_call.name]
+            function_response = await ai_function["callback"](**function_kwargs)
+
+            if function_call.call_id is None:
+                message_history.append(
+                    {
+                        "role": "function",
+                        "name": function_call.name,
+                        "content": [function_response],
+                    }
+                )
+            else:
+                response_context_items.append(
+                    gpt.function_call_output_item(function_call, function_response)
+                )
+
+    raise NotImplementedError(
+        f"OpenAI function calling exceeded {MAX_FUNCTION_CALL_ROUNDS} rounds"
     )
+
+
+def _image_url_message_content(image_url: str) -> MessageContent:
+    return {
+        "type": "image_url",
+        "image_url": {"url": image_url},
+    }
+
+
+def _message_content_from_prompt(
+    prompt: str,
+    attachment_urls: list[str],
+) -> tuple[str, list[MessageContent]]:
+    image_urls: list[str] = []
+
+    # Extract image URLs from the prompt and replace them with {IMAGE}
+    prompt_parts = prompt.split()
+    images_seen = 0
+    for i, part in enumerate(prompt_parts):
+        if (part.startswith("http://") or part.startswith("https://")) and any(
+            part.endswith(ext) for ext in gpt.VALID_IMAGE_EXTENSIONS
+        ):
+            image_urls.append(part)
+            prompt_parts[i] = f"{{IMAGE #{images_seen + 1}}}"
+            images_seen += 1
+    prompt = " ".join(prompt_parts)
+
+    new_message_content: list[MessageContent] = [
+        {
+            "type": "text",
+            "text": prompt,
+        }
+    ]
+    for image_url in [*image_urls, *attachment_urls]:
+        new_message_content.append(_image_url_message_content(image_url))
+
+    return prompt, new_message_content
 
 
 class SendAndReceiveResponse(BaseModel):
@@ -198,39 +208,10 @@ async def send_message_to_thread(
             for m in thread_history[-tracked_thread.context_length :]
         ]
 
-        ## Build the new message's prompt
-        image_urls: list[str] = []
-
-        # Extract image URLs from the prompt and replace them with {IMAGE}
-        prompt_parts = prompt.split()
-        images_seen = 0
-        for i, part in enumerate(prompt_parts):
-            if (part.startswith("http://") or part.startswith("https://")) and any(
-                part.endswith(ext) for ext in gpt.VALID_IMAGE_EXTENSIONS
-            ):
-                image_urls.append(part)
-                prompt_parts[i] = f"{{IMAGE #{images_seen + 1}}}"
-                images_seen += 1
-        prompt = " ".join(prompt_parts)
-
-        # Add the new prompt and attachments to the message history
-        new_message_content: list[MessageContent] = []
-        new_message_content.append(
-            {
-                "type": "text",
-                "text": prompt,
-            }
+        prompt, new_message_content = _message_content_from_prompt(
+            prompt,
+            attachment_urls=[attachment.url for attachment in message.attachments],
         )
-        for image_url in image_urls:
-            new_message_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
-            )
-        for attachment in message.attachments:
-            # TODO: should these be included as {IMAGE #N} at the end of the message?
-            image_urls.append(attachment.url)
 
         message_history.append(
             {

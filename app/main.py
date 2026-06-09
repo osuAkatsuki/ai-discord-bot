@@ -356,7 +356,7 @@ async def summarize(
 
     try:
         gpt_response = await gpt.send(
-            model=gpt.AIModel.OPENAI_GPT_4_OMNI,
+            model=gpt.DEFAULT_AI_MODEL,
             messages=messages,
         )
     except Exception as exc:
@@ -368,7 +368,7 @@ async def summarize(
         )
         return
 
-    gpt_response_content = gpt_response.choices[0].message.content
+    gpt_response_content = gpt_response.response_content
     assert gpt_response_content is not None
 
     # tokens_spent = gpt_response.usage.total_tokens
@@ -382,7 +382,7 @@ async def summarize(
 @command_tree.command(name=command_name("ai"))
 async def ai(
     interaction: discord.Interaction,
-    model: gpt.AIModel = gpt.AIModel.OPENAI_GPT_4_OMNI,
+    model: gpt.AIModel = gpt.DEFAULT_AI_MODEL,
 ):
     if (
         interaction.channel is not None
@@ -482,7 +482,7 @@ async def transcript(
 async def query(
     interaction: discord.Interaction,
     query: str,
-    model: gpt.AIModel = gpt.AIModel.OPENAI_GPT_4_OMNI,
+    model: gpt.AIModel = gpt.DEFAULT_AI_MODEL,
 ):
     """Query a model without any context."""
 
