@@ -1,3 +1,6 @@
 black
 pre-commit
+pytest
+pytest-asyncio
+pytest-cov
 reorder-python-imports

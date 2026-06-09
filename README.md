@@ -1,5 +1,5 @@
 # ai-discord-bot
-A discord bot for creating multi-user conversations with OpenAI models (namely GPT-4)
+A discord bot for creating multi-user conversations with OpenAI and DeepSeek models.
 
 # installation
 ```sh

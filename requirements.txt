@@ -2,5 +2,5 @@ asyncpg
 databases
 discord.py
 httpx
-openai
+openai>=2.41.0,<3
 python-dotenv
