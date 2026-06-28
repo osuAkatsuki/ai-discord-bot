@@ -300,7 +300,28 @@ async def send_message_without_context(
     if isinstance(gpt_response, Error):
         return gpt_response
 
-    # TODO: Track input and output tokens here.
+    await threads.create(
+        interaction.id,
+        initiator_user_id=interaction.user.id,
+        model=model,
+        context_length=0,
+    )
+
+    await thread_messages.create(
+        interaction.id,
+        prompt,
+        discord_user_id=interaction.user.id,
+        role="user",
+        tokens_used=gpt_response.input_tokens,
+    )
+
+    await thread_messages.create(
+        interaction.id,
+        gpt_response.response_content,
+        discord_user_id=bot.user.id,
+        role="assistant",
+        tokens_used=gpt_response.output_tokens,
+    )
 
     response_messages: list[str] = (
         discord_message_utils.smart_split_message_into_chunks(

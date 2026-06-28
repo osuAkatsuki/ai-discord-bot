@@ -1,4 +1,5 @@
 import re
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -126,5 +127,104 @@ async def test_make_gpt_request_continues_responses_function_call(
             "type": "function_call_output",
             "call_id": "call_123",
             "output": "Tokyo is 22C.",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_message_without_context_tracks_query_requester_cost(
+    monkeypatch,
+):
+    created_threads: list[tuple[int, int, gpt.AIModel, int]] = []
+    created_messages: list[dict[str, Any]] = []
+
+    async def fake_make_gpt_request(
+        message_history: list[gpt.Message],
+        model: gpt.AIModel,
+    ) -> ai_conversations._GptRequestResponse:
+        assert message_history == [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "what changed?"}],
+            }
+        ]
+        assert model == gpt.AIModel.OPENAI_GPT_5_4
+        return ai_conversations._GptRequestResponse(
+            response_content="nothing notable",
+            input_tokens=31,
+            output_tokens=7,
+        )
+
+    async def fake_threads_create(
+        thread_id: int,
+        initiator_user_id: int,
+        model: gpt.AIModel,
+        context_length: int,
+    ) -> None:
+        created_threads.append((thread_id, initiator_user_id, model, context_length))
+
+    async def fake_thread_messages_create(
+        thread_id: int,
+        content: str,
+        discord_user_id: int,
+        role: str,
+        tokens_used: int,
+    ) -> None:
+        created_messages.append(
+            {
+                "thread_id": thread_id,
+                "content": content,
+                "discord_user_id": discord_user_id,
+                "role": role,
+                "tokens_used": tokens_used,
+            }
+        )
+
+    monkeypatch.setattr(ai_conversations, "_make_gpt_request", fake_make_gpt_request)
+    monkeypatch.setattr(ai_conversations.threads, "create", fake_threads_create)
+    monkeypatch.setattr(
+        ai_conversations.thread_messages,
+        "create",
+        fake_thread_messages_create,
+    )
+
+    bot = SimpleNamespace(user=SimpleNamespace(id=999))
+    interaction = SimpleNamespace(
+        id=12345,
+        user=SimpleNamespace(id=285190493703503872),
+    )
+
+    result = await ai_conversations.send_message_without_context(
+        bot,
+        interaction,
+        "what changed?",
+        gpt.AIModel.OPENAI_GPT_5_4,
+    )
+
+    assert result == ai_conversations.SendAndReceiveResponse(
+        response_messages=["nothing notable"]
+    )
+    assert created_threads == [
+        (
+            12345,
+            285190493703503872,
+            gpt.AIModel.OPENAI_GPT_5_4,
+            0,
+        )
+    ]
+    assert created_messages == [
+        {
+            "thread_id": 12345,
+            "content": "what changed?",
+            "discord_user_id": 285190493703503872,
+            "role": "user",
+            "tokens_used": 31,
+        },
+        {
+            "thread_id": 12345,
+            "content": "nothing notable",
+            "discord_user_id": 999,
+            "role": "assistant",
+            "tokens_used": 7,
         },
     ]
