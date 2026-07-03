@@ -5,7 +5,7 @@ apps:
     replicaCount: 1
     container:
       image:
-        repository: osuakatsuki/ai-discord-bot
+        repository: ghcr.io/osuakatsuki/ai-discord-bot
         tag: latest
       port: 80
       # readinessProbe:
