@@ -3,9 +3,10 @@ import io
 import logging
 import os.path
 import sys
-from collections import defaultdict
 from datetime import datetime
 from datetime import timedelta
+from datetime import timezone
+from typing import Literal
 
 import discord.abc
 
@@ -18,9 +19,11 @@ from app.models import DiscordBot
 from app.usecases import ai_conversations
 
 
+from app import ai
+from app import attachments
 from app import discord_message_utils, openai_pricing
 from app import settings
-from app.adapters.openai import gpt
+from app.repositories import ai_requests
 from app.repositories import thread_messages
 from app.repositories import threads
 
@@ -74,48 +77,50 @@ async def on_message(message: discord.Message):
         await message.channel.send(msg)
 
 
-async def _calculate_per_requester_costs(
-    thread_id: int | None = None, created_at_gte: datetime | None = None
-) -> dict[int, float]:
-    messages = await thread_messages.fetch_many(
-        thread_id=thread_id,
-        created_at_gte=created_at_gte,
+MODEL_CHOICES = [
+    discord.app_commands.Choice(name=model.value, value=model.value)
+    for model in ai.SELECTABLE_MODELS
+]
+
+
+def _model_description(
+    model: ai.AIModel, reasoning_effort: str | None, web_search: bool
+) -> str:
+    return "\n".join(
+        (
+            f"Model: **{model.value}**",
+            f"Reasoning: {reasoning_effort or 'low'} | Web search: {'on' if web_search else 'off'}",
+            f"Standard input/output: ${openai_pricing.input_price_per_million_tokens(model)}/${openai_pricing.output_price_per_million_tokens(model)} per 1M tokens.",
+            "Cached input, cache writes, and long context have separate rates. Search costs $0.01 per call plus tokens.",
+        )
     )
-    threads_cache: dict[int, threads.Thread] = {}
-    per_requester_per_model_input_tokens: dict[int, dict[gpt.AIModel, int]] = (
-        defaultdict(lambda: defaultdict(int))
-    )
-    for message in messages:
-        if message.role != "user":
-            continue
 
-        thread_id = message.thread_id
-        thread = threads_cache.get(thread_id)
-        if thread is None:
-            thread = await threads.fetch_one(thread_id)
-            if thread is None:
-                LOGGER.warning(
-                    "Thread %s not found",
-                    thread_id,
-                    extra={"thread_id": thread_id},
-                )
-                continue
-            threads_cache[thread_id] = thread
 
-        user_id = message.discord_user_id
-        per_model_input_tokens = per_requester_per_model_input_tokens[user_id]
-        per_model_input_tokens[thread.model] += message.tokens_used
-
-    per_requester_cost: dict[int, float] = defaultdict(float)
-    for user_id, per_model_tokens in per_requester_per_model_input_tokens.items():
-        for model, input_tokens in per_model_tokens.items():
-            requester_cost = per_requester_cost[user_id]
-            requester_cost += openai_pricing.tokens_to_dollars(
-                model, input_tokens, output_tokens=0
-            )
-            per_requester_cost[user_id] = requester_cost
-
-    return per_requester_cost
+async def _send_cost_report(
+    interaction: discord.Interaction,
+    *,
+    thread_id: int | None = None,
+    created_at_gte: datetime | None = None,
+) -> None:
+    rows = await ai_requests.costs_by_requester(thread_id, created_at_gte)
+    lines = [
+        "**Estimated requester costs (USD)**",
+        "Includes recorded input, output/reasoning, search, and image usage.",
+        "Earlier requests without usage records are excluded; this is not a provider invoice.",
+        "",
+    ]
+    for row in rows:
+        lines.append(f"<@{row['requester_id']}>: ${row['cost']:.5f}")
+    lines.append(f"\n**Recorded total: ${sum(row['cost'] for row in rows):.5f}**")
+    unpriced = sum(row["unpriced_requests"] for row in rows)
+    if unpriced:
+        lines.append(
+            f"{unpriced} request(s) had no usage data and are not included in the total."
+        )
+    for chunk in discord_message_utils.split_message_into_chunks(
+        "\n".join(lines), max_length=2000
+    ):
+        await interaction.followup.send(chunk)
 
 
 @command_tree.command(name=command_name("monthlycost"))
@@ -129,25 +134,9 @@ async def monthlycost(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-    per_requester_cost = await _calculate_per_requester_costs(
-        created_at_gte=datetime.now() - timedelta(days=30)
+    await _send_cost_report(
+        interaction, created_at_gte=datetime.now(timezone.utc) - timedelta(days=30)
     )
-    response_cost = sum(per_requester_cost.values())
-
-    message_chunks = [
-        "**Monthly Requester Cost Breakdown**",
-        "**--------------------------------**",
-        "Input cost is attributed to the user who sent each model request.",
-        "",
-    ]
-    for user_id, cost in per_requester_cost.items():
-        user = await bot.fetch_user(user_id)
-        message_chunks.append(f"{user.mention}: ${cost:.5f}")
-
-    message_chunks.append("")
-    message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
-
-    await interaction.followup.send("\n".join(message_chunks))
 
 
 @command_tree.command(name=command_name("threadcost"))
@@ -168,31 +157,16 @@ async def threadcost(interaction: discord.Interaction):
 
     await interaction.response.defer()
 
-    per_requester_cost = await _calculate_per_requester_costs(
-        thread_id=interaction.channel.id
-    )
-    response_cost = sum(per_requester_cost.values())
-
-    message_chunks = [
-        "**Thread Requester Cost Breakdown**",
-        "**-------------------------------**",
-        "Input cost is attributed to the user who sent each model request.",
-        "",
-    ]
-    for user_id, cost in per_requester_cost.items():
-        user = await bot.fetch_user(user_id)
-        message_chunks.append(f"{user.mention}: ${cost:.5f}")
-
-    message_chunks.append("")
-    message_chunks.append(f"**Total Cost: ${response_cost:.5f}**")
-
-    await interaction.followup.send("\n".join(message_chunks))
+    await _send_cost_report(interaction, thread_id=interaction.channel.id)
 
 
 @command_tree.command(name=command_name("model"))
+@discord.app_commands.choices(model=MODEL_CHOICES)
 async def model(
     interaction: discord.Interaction,
-    model: gpt.AIModel,
+    model: str,
+    reasoning: ai.ReasoningEffort | None = None,
+    web_search: bool = False,
 ):
     if not isinstance(interaction.channel, discord.Thread):
         await interaction.response.send_message(
@@ -218,16 +192,18 @@ async def model(
         )
         return
 
-    await threads.partial_update(thread.thread_id, model=model)
+    selected_model = ai.AIModel(model)
+    try:
+        ai.validate_options(selected_model, reasoning, web_search)
+    except ValueError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
+    await threads.set_model_options(
+        thread.thread_id, selected_model, reasoning, web_search
+    )
 
     await interaction.followup.send(
-        content="\n".join(
-            (
-                f"**Model switched to {model}**",
-                f"Model Input Rate: ${openai_pricing.input_price_per_million_tokens(model)}/1M tokens",
-                f"Model Output Rate: ${openai_pricing.output_price_per_million_tokens(model)}/1M tokens",
-            )
-        ),
+        _model_description(selected_model, reasoning, web_search)
     )
 
 
@@ -250,9 +226,9 @@ async def context(
         )
         return
 
-    if context_length > MAX_CONTENT_LENGTH:
+    if not 0 <= context_length <= MAX_CONTENT_LENGTH:
         await interaction.response.send_message(
-            f"Context length cannot be greater than {MAX_CONTENT_LENGTH}",
+            f"Context length must be between 0 and {MAX_CONTENT_LENGTH}",
         )
         return
 
@@ -315,7 +291,7 @@ async def summarize(
     else:
         tracking = True
 
-    messages: list[gpt.Message] = []
+    messages: list[ai.Message] = []
 
     async for message in interaction.channel.history(limit=limit):
         content = message.clean_content
@@ -357,35 +333,30 @@ async def summarize(
         }
     )
 
-    try:
-        gpt_response = await gpt.send(
-            model=gpt.DEFAULT_AI_MODEL,
-            messages=messages,
-        )
-    except Exception as exc:
-        # NOTE: this is *generally* bad practice to expose this information
-        # to end users, and should be removed if we are to deploy this app
-        # more widely. Right now it's okay because it's a private bot.
-        await interaction.followup.send(
-            f"Request to OpenAI failed with the following error:\n```\n{exc}```"
-        )
+    result = await ai_conversations.make_ai_request(
+        messages,
+        ai.DEFAULT_AI_MODEL,
+        thread_id=interaction.channel.id,
+        requester_id=interaction.user.id,
+        functions=[],
+    )
+    if isinstance(result, Error):
+        for message in result.messages:
+            await interaction.followup.send(message)
         return
-
-    gpt_response_content = gpt_response.response_content
-    assert gpt_response_content is not None
-
-    # tokens_spent = gpt_response.usage.total_tokens
-
     for chunk in discord_message_utils.split_message_into_chunks(
-        gpt_response_content, max_length=2000
+        result.response_content, max_length=2000
     ):
         await interaction.followup.send(chunk)
 
 
 @command_tree.command(name=command_name("ai"))
-async def ai(
+@discord.app_commands.choices(model=MODEL_CHOICES)
+async def create_ai_thread(
     interaction: discord.Interaction,
-    model: gpt.AIModel = gpt.DEFAULT_AI_MODEL,
+    model: str = ai.DEFAULT_AI_MODEL.value,
+    reasoning: ai.ReasoningEffort | None = None,
+    web_search: bool = False,
 ):
     if (
         interaction.channel is not None
@@ -413,14 +384,14 @@ async def ai(
         )
         return
 
+    selected_model = ai.AIModel(model)
+    try:
+        ai.validate_options(selected_model, reasoning, web_search)
+    except ValueError as exc:
+        await interaction.followup.send(str(exc), ephemeral=True)
+        return
     thread_creation_message = await interaction.followup.send(
-        content="\n".join(
-            (
-                f"**Opening a thread with {model}**",
-                f"Model Input Rate: ${openai_pricing.input_price_per_million_tokens(model)}/1M tokens",
-                f"Model Output Rate: ${openai_pricing.output_price_per_million_tokens(model)}/1M tokens",
-            )
-        ),
+        content=_model_description(selected_model, reasoning, web_search),
         wait=True,
     )
 
@@ -431,7 +402,9 @@ async def ai(
     await threads.create(
         thread.id,
         initiator_user_id=interaction.user.id,
-        model=model,
+        model=selected_model,
+        reasoning_effort=reasoning,
+        web_search=web_search,
         context_length=5,  # messages
     )
 
@@ -490,10 +463,14 @@ async def transcript(
 
 
 @command_tree.command(name=command_name("query"))
+@discord.app_commands.choices(model=MODEL_CHOICES)
 async def query(
     interaction: discord.Interaction,
     query: str,
-    model: gpt.AIModel = gpt.DEFAULT_AI_MODEL,
+    model: str = ai.DEFAULT_AI_MODEL.value,
+    reasoning: ai.ReasoningEffort | None = None,
+    web_search: bool = False,
+    attachment: discord.Attachment | None = None,
 ):
     """Query a model without any context."""
 
@@ -503,7 +480,10 @@ async def query(
         bot,
         interaction,
         query,
-        model,
+        ai.AIModel(model),
+        reasoning_effort=reasoning,
+        web_search=web_search,
+        attachment=attachment,
     )
 
     # I do not think interactions allow multiple messages.
@@ -516,6 +496,83 @@ async def query(
     # I have no idea whether they actually allow you to send multiple follow-ups.
     for message_text in messages_to_send:
         await interaction.followup.send(message_text)
+
+
+@command_tree.command(name=command_name("image"))
+async def image(
+    interaction: discord.Interaction,
+    prompt: str,
+    reference: discord.Attachment | None = None,
+    model: ai.ImageModel | None = None,
+    quality: Literal["low", "medium", "high", "xhigh", "max"] = "medium",
+    size: Literal["1024x1024", "1536x1024", "1024x1536"] = "1024x1024",
+    background: Literal["auto", "opaque", "transparent"] = "auto",
+):
+    """Generate an image, or edit an attached reference image."""
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command", ephemeral=True
+        )
+        return
+    await interaction.response.defer()
+    reference_image = None
+    if reference is not None:
+        suffix = attachments.extension(reference.filename)
+        if (
+            suffix not in {".png", ".jpg", ".jpeg", ".webp"}
+            or reference.size > attachments.MAX_ATTACHMENT_BYTES
+        ):
+            await interaction.followup.send(
+                "Use a PNG, JPEG, or WebP reference up to 20 MiB."
+            )
+            return
+    selected_model = model or (
+        ai.ImageModel.OPENAI_SUNBURST if reference else ai.ImageModel.OPENAI_FLARE
+    )
+    try:
+        if reference is not None:
+            reference_image = (
+                reference.filename,
+                await reference.read(),
+                reference.content_type or "application/octet-stream",
+            )
+        result = await ai.generate_image(
+            model=selected_model,
+            prompt=prompt,
+            quality=quality,
+            size=size,
+            background=background,
+            reference_image=reference_image,
+        )
+    except Exception:
+        LOGGER.exception("Image request failed")
+        await interaction.followup.send(
+            "The image request failed. Check model access and try again."
+        )
+        return
+    await ai_requests.create(
+        thread_id=interaction.channel_id or interaction.id,
+        requester_id=interaction.user.id,
+        model=selected_model.value,
+        usage=result.usage,
+        estimated_cost_usd=result.estimated_cost_usd,
+    )
+    if not result.images:
+        await interaction.followup.send(
+            "The model returned no image. Try revising the prompt."
+        )
+        return
+    upload_limit = (
+        interaction.guild.filesize_limit if interaction.guild else 10 * 1024 * 1024
+    )
+    for image_data in result.images:
+        if len(image_data) > upload_limit:
+            await interaction.followup.send(
+                "The generated image exceeds this channel's upload limit. Try a smaller size or lower quality. The generation was still billed."
+            )
+            continue
+        with io.BytesIO(image_data) as f:
+            await interaction.followup.send(file=discord.File(f, filename="image.webp"))
 
 
 if __name__ == "__main__":

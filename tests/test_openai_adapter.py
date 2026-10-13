@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -12,6 +13,9 @@ class _FakeUsage:
     input_tokens: int = 11
     output_tokens: int = 7
 
+    def model_dump(self):
+        return asdict(self)
+
 
 class _FakeOutputItem:
     type = "message"
@@ -22,6 +26,7 @@ class _FakeOutputItem:
 
 @dataclass
 class _FakeResponse:
+    status: str = "completed"
     output_text: str = "done"
     usage: _FakeUsage = field(default_factory=_FakeUsage)
     output: list[_FakeOutputItem] = field(default_factory=lambda: [_FakeOutputItem()])

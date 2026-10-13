@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,7 @@ READ_PARAMS = """\
     discord_user_id,
     role,
     tokens_used,
+    content_parts,
     created_at
 """
 
@@ -25,6 +27,7 @@ class ThreadMessage(BaseModel):
     discord_user_id: int
     role: Literal["user", "assistant"]
     tokens_used: int
+    content_parts: list[dict[str, Any]] | None = None
     created_at: datetime
 
 
@@ -37,6 +40,9 @@ def deserialize(rec: Mapping[str, Any]) -> ThreadMessage:
         role=rec["role"],
         tokens_used=rec["tokens_used"],
         created_at=rec["created_at"],
+        content_parts=(
+            json.loads(rec["content_parts"]) if rec["content_parts"] else None
+        ),
     )
 
 
@@ -46,10 +52,11 @@ async def create(
     discord_user_id: int,
     role: Literal["user", "assistant"],
     tokens_used: int,
+    content_parts: list[dict[str, Any]] | None = None,
 ) -> ThreadMessage:
     query = f"""\
-        INSERT INTO thread_messages (thread_id, content, discord_user_id, role, tokens_used)
-        VALUES (:thread_id, :content, :discord_user_id, :role, :tokens_used)
+        INSERT INTO thread_messages (thread_id, content, discord_user_id, role, tokens_used, content_parts)
+        VALUES (:thread_id, :content, :discord_user_id, :role, :tokens_used, :content_parts)
         RETURNING {READ_PARAMS}
     """
     values: dict[str, Any] = {
@@ -58,6 +65,9 @@ async def create(
         "discord_user_id": discord_user_id,
         "role": role,
         "tokens_used": tokens_used,
+        "content_parts": (
+            json.dumps(content_parts) if content_parts is not None else None
+        ),
     }
     rec = await state.write_database.fetch_one(query, values)
     assert rec is not None

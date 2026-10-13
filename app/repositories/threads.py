@@ -5,13 +5,15 @@ from typing import Any
 from pydantic import BaseModel
 
 from app import state
-from app.adapters.openai.gpt import AIModel
+from app.ai import AIModel
 
 READ_PARAMS = """\
     thread_id,
     initiator_user_id,
     model,
     context_length,
+    reasoning_effort,
+    web_search,
     created_at
 """
 
@@ -21,6 +23,8 @@ class Thread(BaseModel):
     initiator_user_id: int
     model: AIModel
     context_length: int
+    reasoning_effort: str | None = None
+    web_search: bool = False
     created_at: datetime
 
 
@@ -31,6 +35,8 @@ def deserialize(rec: Mapping[str, Any]) -> Thread:
         model=AIModel(rec["model"]),
         context_length=rec["context_length"],
         created_at=rec["created_at"],
+        reasoning_effort=rec["reasoning_effort"],
+        web_search=rec["web_search"],
     )
 
 
@@ -39,10 +45,12 @@ async def create(
     initiator_user_id: int,
     model: AIModel,
     context_length: int,
+    reasoning_effort: str | None = None,
+    web_search: bool = False,
 ) -> Thread:
     query = f"""\
-        INSERT INTO threads (thread_id, initiator_user_id, model, context_length)
-        VALUES (:thread_id, :initiator_user_id, :model, :context_length)
+        INSERT INTO threads (thread_id, initiator_user_id, model, context_length, reasoning_effort, web_search)
+        VALUES (:thread_id, :initiator_user_id, :model, :context_length, :reasoning_effort, :web_search)
         RETURNING {READ_PARAMS}
     """
     values: dict[str, Any] = {
@@ -50,6 +58,8 @@ async def create(
         "initiator_user_id": initiator_user_id,
         "model": model.value,
         "context_length": context_length,
+        "reasoning_effort": reasoning_effort,
+        "web_search": web_search,
     }
     rec = await state.write_database.fetch_one(query, values)
     assert rec is not None
@@ -116,3 +126,21 @@ async def partial_update(
     }
     rec = await state.write_database.fetch_one(query, values)
     return deserialize(rec) if rec is not None else None
+
+
+async def set_model_options(
+    thread_id: int, model: AIModel, reasoning_effort: str | None, web_search: bool
+) -> None:
+    await state.write_database.execute(
+        """
+        UPDATE threads SET model = :model, reasoning_effort = :reasoning_effort,
+                           web_search = :web_search
+        WHERE thread_id = :thread_id
+        """,
+        {
+            "thread_id": thread_id,
+            "model": model.value,
+            "reasoning_effort": reasoning_effort,
+            "web_search": web_search,
+        },
+    )
