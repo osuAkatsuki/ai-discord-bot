@@ -24,7 +24,6 @@ from app.adapters.openai import gpt
 from app.repositories import thread_messages
 from app.repositories import threads
 
-
 LOGGER = logging.getLogger(__name__)
 
 MAX_CONTENT_LENGTH = 100
