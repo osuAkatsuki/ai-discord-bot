@@ -1,6 +1,7 @@
 # Provider-neutral conversation contracts and the active provider entry point.
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -93,6 +94,19 @@ class FunctionCall:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionSession:
+    id: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionFile:
+    session_id: str
+    id: str
+    filename: str
+
+
+@dataclass(frozen=True, slots=True)
 class AIResponse:
     response_content: str | None
     function_calls: list[FunctionCall]
@@ -102,6 +116,7 @@ class AIResponse:
     provider_state: list[dict[str, Any]]
     usage: dict[str, Any] | None = None
     estimated_cost_usd: Decimal | None = None
+    files: tuple[ExecutionFile, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +139,7 @@ async def send(
     tool_rounds: Sequence[ToolRound] | None = None,
     reasoning_effort: str | None = None,
     web_search: bool = False,
+    execution_session_id: str | None = None,
 ) -> AIResponse:
     from app.adapters.openai import gpt
 
@@ -134,6 +150,7 @@ async def send(
         tool_rounds=tool_rounds,
         reasoning_effort=reasoning_effort,
         web_search=web_search,
+        execution_session_id=execution_session_id,
     )
 
 
@@ -176,3 +193,45 @@ async def generate_image(
         background=background,
         reference_image=reference_image,
     )
+
+
+def validate_execution(model: AIModel) -> None:
+    from app.adapters.openai import execution
+
+    execution.validate_model(model)
+
+
+async def create_execution_session() -> ExecutionSession:
+    from app.adapters.openai import execution
+
+    return await execution.create_session()
+
+
+async def get_execution_session(session_id: str) -> ExecutionSession | None:
+    from app.adapters.openai import execution
+
+    return await execution.get_session(session_id)
+
+
+async def delete_execution_session(session_id: str) -> None:
+    from app.adapters.openai import execution
+
+    await execution.delete_session(session_id)
+
+
+async def upload_execution_file(session_id: str, filename: str, content: bytes) -> str:
+    from app.adapters.openai import execution
+
+    return await execution.upload_file(session_id, filename, content)
+
+
+async def download_execution_file(file: ExecutionFile, max_bytes: int) -> bytes:
+    from app.adapters.openai import execution
+
+    return await execution.download_file(file, max_bytes)
+
+
+def execution_session_cost(session: ExecutionSession) -> Decimal:
+    from app.adapters.openai import execution
+
+    return execution.session_cost(session)

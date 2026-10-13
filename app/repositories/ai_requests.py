@@ -44,3 +44,42 @@ async def costs_by_requester(
         """,
         {"thread_id": thread_id, "created_at_gte": created_at_gte},
     )
+
+
+async def record_execution_cost(
+    *, thread_id: int, requester_id: int, session_id: str, total_cost: Decimal
+) -> None:
+    # Persist the cumulative estimate and its newly attributed cost atomically.
+    # Repeated observations of the same billing interval must not double count.
+    await state.write_database.execute(
+        """
+        WITH previous AS (
+            SELECT thread_id, execution_cost_usd
+            FROM threads
+            WHERE thread_id = :thread_id AND execution_session_id = :session_id
+            FOR UPDATE
+        ), updated AS (
+            UPDATE threads t SET execution_cost_usd = :total_cost
+            FROM previous p
+            WHERE t.thread_id = p.thread_id AND :total_cost > p.execution_cost_usd
+            RETURNING :total_cost - p.execution_cost_usd AS added_cost
+        )
+        INSERT INTO ai_requests
+            (thread_id, requester_id, model, usage, estimated_cost_usd)
+        SELECT :thread_id, :requester_id, 'openai-hosted-shell', :usage, added_cost
+        FROM updated
+        """,
+        {
+            "thread_id": thread_id,
+            "requester_id": requester_id,
+            "session_id": session_id,
+            "total_cost": total_cost,
+            "usage": json.dumps(
+                {
+                    "container_id": session_id,
+                    "estimated_cumulative_cost_usd": str(total_cost),
+                    "memory_limit": "1g",
+                }
+            ),
+        },
+    )
