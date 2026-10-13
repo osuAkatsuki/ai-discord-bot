@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from pathlib import PurePosixPath
 from typing import Literal
 
 import discord.abc
@@ -17,6 +18,7 @@ sys.path.append(srv_root)
 from app.errors import Error
 from app.models import DiscordBot
 from app.usecases import ai_conversations
+from app.usecases import cloud_execution
 
 
 from app import ai
@@ -75,6 +77,24 @@ async def on_message(message: discord.Message):
 
     for msg in data.response_messages:
         await message.channel.send(msg)
+    upload_limit = message.guild.filesize_limit if message.guild else 10 * 1024 * 1024
+    for file in data.files[:10]:
+        try:
+            content = await ai.download_execution_file(file, upload_limit)
+        except Exception:
+            LOGGER.exception("Cloud artifact download failed")
+            await message.channel.send(
+                "A generated file could not be attached: it may exceed the channel's "
+                "upload limit or its cloud workspace may have expired."
+            )
+            continue
+        filename = PurePosixPath(file.filename).name or "output.bin"
+        with io.BytesIO(content) as buffer:
+            await message.channel.send(file=discord.File(buffer, filename=filename))
+    if len(data.files) > 10:
+        await message.channel.send(
+            "Only the first 10 files were attached. Ask for a ZIP to download more."
+        )
 
 
 MODEL_CHOICES = [
@@ -84,7 +104,10 @@ MODEL_CHOICES = [
 
 
 def _model_description(
-    model: ai.AIModel, reasoning_effort: str | None, web_search: bool
+    model: ai.AIModel,
+    reasoning_effort: str | None,
+    web_search: bool,
+    cloud_execution: bool = False,
 ) -> str:
     return "\n".join(
         (
@@ -92,6 +115,12 @@ def _model_description(
             f"Reasoning: {reasoning_effort or 'low'} | Web search: {'on' if web_search else 'off'}",
             f"Standard input/output: ${openai_pricing.input_price_per_million_tokens(model)}/${openai_pricing.output_price_per_million_tokens(model)} per 1M tokens.",
             "Cached input, cache writes, and long context have separate rates. Search costs $0.01 per call plus tokens.",
+            (
+                "Cloud execution: on; 1 GB workspace estimated at $0.03 per 20-minute session. "
+                "Files expire after 20 minutes of inactivity. Configure/reset with /execution."
+                if cloud_execution
+                else "Cloud execution: off (enable with /execution)."
+            ),
         )
     )
 
@@ -105,7 +134,7 @@ async def _send_cost_report(
     rows = await ai_requests.costs_by_requester(thread_id, created_at_gte)
     lines = [
         "**Estimated requester costs (USD)**",
-        "Includes recorded input, output/reasoning, search, and image usage.",
+        "Includes recorded input, output/reasoning, search, image, and estimated cloud-container usage.",
         "Earlier requests without usage records are excluded; this is not a provider invoice.",
         "",
     ]
@@ -203,8 +232,64 @@ async def model(
     )
 
     await interaction.followup.send(
-        _model_description(selected_model, reasoning, web_search)
+        _model_description(
+            selected_model, reasoning, web_search, thread.cloud_execution
+        )
     )
+
+
+@command_tree.command(name=command_name("execution"))
+async def execution(
+    interaction: discord.Interaction,
+    enabled: bool,
+    reset: bool = False,
+):
+    """Enable cloud commands for a thread; disabling or resetting deletes its workspace."""
+    if interaction.user.id not in ai_conversations.DISCORD_USER_ID_WHITELIST:
+        await interaction.response.send_message(
+            "You are not allowed to use this command", ephemeral=True
+        )
+        return
+    if not isinstance(interaction.channel, discord.Thread):
+        await interaction.response.send_message(
+            "This command can only be used in threads.", ephemeral=True
+        )
+        return
+    await interaction.response.defer()
+    async with cloud_execution.thread_lock(interaction.channel.id):
+        thread = await threads.fetch_one(interaction.channel.id)
+        if thread is None:
+            await interaction.followup.send(
+                "This thread is not tracked by the bot.", ephemeral=True
+            )
+            return
+        try:
+            await cloud_execution.configure(thread, enabled, reset)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        except Exception:
+            LOGGER.exception("Cloud execution configuration failed")
+            await interaction.followup.send(
+                "Could not update the cloud workspace. Try again.", ephemeral=True
+            )
+            return
+    if enabled:
+        domains = ", ".join(settings.OPENAI_EXECUTION_ALLOWED_DOMAINS) or "disabled"
+        text = (
+            "Cloud execution is on for this shared thread. Commands run in OpenAI's "
+            "1 GB container; files and installed packages persist until it expires "
+            "after 20 minutes of inactivity. All authorized participants share this workspace. "
+            "Container estimates start at $0.03 per 20-minute session, plus model tokens. "
+            f"Outbound network domains: {domains}."
+        )
+        if reset:
+            text += (
+                " The previous workspace was deleted; the next request starts fresh."
+            )
+    else:
+        text = "Cloud execution is off. Any previous cloud workspace was deleted."
+    await interaction.followup.send(text)
 
 
 @command_tree.command(name=command_name("context"))
@@ -357,6 +442,7 @@ async def create_ai_thread(
     model: str = ai.DEFAULT_AI_MODEL.value,
     reasoning: ai.ReasoningEffort | None = None,
     web_search: bool = False,
+    cloud_execution: bool = False,
 ):
     if (
         interaction.channel is not None
@@ -387,11 +473,15 @@ async def create_ai_thread(
     selected_model = ai.AIModel(model)
     try:
         ai.validate_options(selected_model, reasoning, web_search)
+        if cloud_execution:
+            ai.validate_execution(selected_model)
     except ValueError as exc:
         await interaction.followup.send(str(exc), ephemeral=True)
         return
     thread_creation_message = await interaction.followup.send(
-        content=_model_description(selected_model, reasoning, web_search),
+        content=_model_description(
+            selected_model, reasoning, web_search, cloud_execution
+        ),
         wait=True,
     )
 
@@ -405,6 +495,7 @@ async def create_ai_thread(
         model=selected_model,
         reasoning_effort=reasoning,
         web_search=web_search,
+        cloud_execution=cloud_execution,
         context_length=5,  # messages
     )
 

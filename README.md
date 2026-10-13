@@ -36,11 +36,13 @@ increase by 50% for the entire request. Reasoning tokens are included in output
 usage. Rates are maintained in `app/openai_pricing.py`.
 
 - `/ai`: create a shared conversation thread. Mention the bot in the thread to
-  request a reply. `model`, `reasoning`, and `web_search` configure the thread.
+  request a reply. `model`, `reasoning`, `web_search`, and `cloud_execution` configure the thread.
 - `/model`: select the model and reasoning/search options for an existing thread.
   Omitted options reset to low reasoning and search off.
 - `/query`: ask a standalone question, optionally with an attachment, reasoning
   effort, and web search. A query inside a thread counts toward that thread's cost.
+- `/execution`: enable or disable a thread's cloud workspace. `reset: true` deletes
+  its files and starts fresh on the next request. Disabling also deletes it.
 - `/context`: retain 0–100 previous messages. Zero sends only the current message.
   This is a message limit, not a token budget or automatic compaction.
 - `/summarize`: summarize channel history using the default model.
@@ -96,11 +98,72 @@ output tokens. Direct Images API requests do not receive cached-input discounts.
 Cost varies with the prompt, reference, size and quality; it is not a fixed price
 per image.
 
+### Cloud execution
+
+Set `/ai cloud_execution: true`, or `/execution enabled: true` in an existing
+thread, to let the model run shell commands and Python in an OpenAI-hosted
+container. Execution is off by default. `/query` and `/summarize` do not use a
+workspace. All three selectable models support hosted shell.
+
+Each thread gets a separate 1 GB container on its first execution-enabled
+request. Its ID is stored in the database and reused across messages and bot
+restarts while the container remains active. Files, cloned repositories, and
+installed packages survive between requests. There is no keep-alive job: after
+20 minutes of inactivity the container expires. The next request starts a fresh
+workspace and reports that the old files and packages are gone. Saved chat
+history does not restore the filesystem; reattach required inputs. `/context: 0`
+clears the model's message context, not its workspace. Use `/execution` to reset it.
+
+Attachments in execution-enabled threads are uploaded as raw files to the
+workspace, including scripts, archives, and complete datasets; the usual 20 MiB
+per-file and less-than-50 MiB per-message limits apply. Images also remain visible
+to the model. Ask for generated outputs as downloadable files: the bot fetches
+files cited by the model from that thread's container and attaches up to ten per
+reply, subject to the Discord upload limit. Downloaded copies survive workspace
+expiry. Ask for a ZIP when there are more files. Failed model requests may leave
+partial work in the workspace; the bot does not automatically retry an entire turn.
+
+Outbound network access is disabled by default. To allow public Git clones and
+package installation, enable container networking and the required domain
+allowlist in your OpenAI organization's dashboard, then configure, for example:
+
+```dotenv
+OPENAI_EXECUTION_ALLOWED_DOMAINS=github.com,codeload.github.com,raw.githubusercontent.com,pypi.org,files.pythonhosted.org
+```
+
+Only operator-configured domains are permitted; Discord users cannot alter the
+policy. Add redirect destinations and other package registries only as needed.
+Existing workspaces are retired on their next use if the configured policy has
+changed. Private repositories require separately designed credential handling;
+this bot does not forward its API key, local environment, files, or Git credentials
+to the workspace. Hosted shell does not provide a terminal on the bot's machine.
+The pre-existing registered weather callback still runs in the bot process.
+
+All authorized participants in a thread share its workspace and can read or
+change its contents. Run one bot process per Discord token: workspace requests
+and configuration changes are serialized per thread inside that process. Each
+provider response has a five-call hosted-tool limit; custom tools can trigger up
+to five provider rounds. Shell activity uses the provider's sandbox and network
+policy; it does not require per-command Discord approval.
+
+Container estimates use the standard $0.03 per started 20-minute interval for
+1 GB, plus model tokens. The bot records allocation and increases in observed
+container lifetime atomically, attributing each increase to the triggering user;
+reusing a billing interval does not charge it again. These are estimates, not a
+billing meter: idle time after the last observation and provider-specific billing
+adjustments can differ, and eligible per-minute billing can cost less. There are
+no background keep-alives or snapshots.
+
+See the official [hosted shell guide](https://developers.openai.com/api/docs/guides/tools-shell),
+[container lifecycle](https://developers.openai.com/api/docs/guides/tools-code-interpreter#expiration),
+and [container pricing](https://developers.openai.com/api/docs/pricing).
+
 ## Usage accounting
 
 `ai_requests` stores the model, usage and estimated USD cost of each completed
 provider call, attributed to the initiating user. Intermediate tool rounds,
-reasoning/output tokens, cache reads/writes, web search and image requests are
+reasoning/output tokens, cache reads/writes, web search, image requests, and cloud
+container estimates are
 included. A thread's later model changes do not reprice these records.
 
 Reports exclude earlier messages without request-level usage records. Requests
@@ -131,8 +194,8 @@ Install development dependencies and run the offline suite with
 and do not connect to Discord or the configured database. Run `make lint` for the
 repository's pre-commit checks.
 
-Voice, streaming replies, hosted code execution, retrieval indexes, and automatic
-context compaction are not implemented.
+Voice, streaming replies, retrieval indexes, and automatic context compaction
+are not implemented.
 
 ## Provider documentation
 

@@ -16,6 +16,12 @@ APP_COMPONENT = os.environ["APP_COMPONENT"]
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 GOOGLE_PLACES_API_KEY = os.environ["GOOGLE_PLACES_API_KEY"]
+# Empty means no outbound network access in hosted execution containers.
+OPENAI_EXECUTION_ALLOWED_DOMAINS = [
+    domain.strip()
+    for domain in os.environ.get("OPENAI_EXECUTION_ALLOWED_DOMAINS", "").split(",")
+    if domain.strip()
+]
 
 READ_DB_SCHEME = os.environ["READ_DB_SCHEME"]
 READ_DB_HOST = os.environ["READ_DB_HOST"]
