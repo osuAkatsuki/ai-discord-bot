@@ -11,8 +11,8 @@ from app import settings
 from app import state
 from app._typing import UNSET
 from app._typing import Unset
-from app.adapters.openai.gpt import FunctionSchema
-from app.adapters.openai.gpt import MessageContent
+from app.ai import FunctionSchema
+from app.ai import MessageContent
 
 OpenAIFunctionCallback: TypeAlias = Callable[..., Awaitable[MessageContent]]
 

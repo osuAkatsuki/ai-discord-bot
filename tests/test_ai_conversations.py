@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
+from app import ai
 from app import openai_functions
-from app.adapters.openai import gpt
 from app.usecases import ai_conversations
 
 
@@ -41,14 +41,14 @@ def test_message_content_from_prompt_includes_urls_and_attachments():
 
 
 @pytest.mark.asyncio
-async def test_make_gpt_request_continues_responses_function_call(
+async def test_make_ai_request_continues_responses_function_call(
     monkeypatch,
 ):
     responses = [
-        gpt.AIResponse(
+        ai.AIResponse(
             response_content=None,
             function_calls=[
-                gpt.FunctionCall(
+                ai.FunctionCall(
                     name="get_weather_for_location",
                     arguments='{"location": "Tokyo"}',
                     call_id="call_123",
@@ -56,7 +56,7 @@ async def test_make_gpt_request_continues_responses_function_call(
             ],
             input_tokens=10,
             output_tokens=2,
-            response_items=[
+            provider_state=[
                 {
                     "type": "function_call",
                     "name": "get_weather_for_location",
@@ -65,30 +65,38 @@ async def test_make_gpt_request_continues_responses_function_call(
                 }
             ],
         ),
-        gpt.AIResponse(
+        ai.AIResponse(
             response_content="Tokyo is 22C.",
             function_calls=[],
             input_tokens=12,
             output_tokens=4,
-            response_items=[],
+            provider_state=[],
         ),
     ]
-    captured_context_items: list[list[dict[str, Any]]] = []
+    captured_rounds: list[list[ai.ToolRound]] = []
+    recorded_requests = []
+
+    async def record_request(**kwargs):
+        recorded_requests.append(kwargs)
+
+    monkeypatch.setattr(ai_conversations.ai_requests, "create", record_request)
 
     async def fake_send(
         *,
-        model: gpt.AIModel,
-        messages: list[gpt.Message],
-        functions: list[gpt.FunctionSchema],
-        response_context_items: list[dict[str, Any]],
-    ) -> gpt.AIResponse:
-        captured_context_items.append(list(response_context_items))
+        model: ai.AIModel,
+        messages: list[ai.Message],
+        functions: list[ai.FunctionSchema],
+        tool_rounds: list[ai.ToolRound],
+        reasoning_effort: str | None,
+        web_search: bool,
+    ) -> ai.AIResponse:
+        captured_rounds.append(list(tool_rounds))
         return responses.pop(0)
 
-    async def fake_weather_callback(location: str) -> gpt.MessageContent:
+    async def fake_weather_callback(location: str) -> ai.MessageContent:
         return {"type": "text", "text": f"{location} is 22C."}
 
-    monkeypatch.setattr(gpt, "send", fake_send)
+    monkeypatch.setattr(ai, "send", fake_send)
     monkeypatch.setattr(
         openai_functions,
         "get_full_openai_functions_schema",
@@ -100,56 +108,63 @@ async def test_make_gpt_request_continues_responses_function_call(
         {"callback": fake_weather_callback, "schema": {}},
     )
 
-    result = await ai_conversations._make_gpt_request(
+    result = await ai_conversations.make_ai_request(
         [
             {
                 "role": "user",
                 "content": [{"type": "text", "text": "weather in Tokyo?"}],
             }
         ],
-        gpt.AIModel.OPENAI_GPT_5_4,
+        ai.AIModel.OPENAI_GPT_5_4,
+        thread_id=123,
+        requester_id=456,
     )
 
-    assert result == ai_conversations._GptRequestResponse(
+    assert result == ai_conversations.AIRequestResponse(
         response_content="Tokyo is 22C.",
         input_tokens=22,
         output_tokens=6,
     )
-    assert captured_context_items[0] == []
-    assert captured_context_items[1] == [
-        {
-            "type": "function_call",
-            "name": "get_weather_for_location",
-            "arguments": '{"location": "Tokyo"}',
-            "call_id": "call_123",
-        },
-        {
-            "type": "function_call_output",
-            "call_id": "call_123",
-            "output": "Tokyo is 22C.",
-        },
+    assert captured_rounds[0] == []
+    result_round = captured_rounds[1][0]
+    assert result_round.results == [
+        ai.ToolResult(
+            call=ai.FunctionCall(
+                name="get_weather_for_location",
+                arguments='{"location": "Tokyo"}',
+                call_id="call_123",
+            ),
+            content={"type": "text", "text": "Tokyo is 22C."},
+        )
     ]
+    assert len(recorded_requests) == 2
+    assert all(
+        r["thread_id"] == 123 and r["requester_id"] == 456 for r in recorded_requests
+    )
 
 
 @pytest.mark.asyncio
 async def test_send_message_without_context_tracks_query_requester_cost(
     monkeypatch,
 ):
-    created_threads: list[tuple[int, int, gpt.AIModel, int]] = []
+    created_threads: list[tuple[int, int, ai.AIModel, int]] = []
     created_messages: list[dict[str, Any]] = []
 
-    async def fake_make_gpt_request(
-        message_history: list[gpt.Message],
-        model: gpt.AIModel,
-    ) -> ai_conversations._GptRequestResponse:
+    async def fake_make_ai_request(
+        message_history: list[ai.Message],
+        model: ai.AIModel,
+        **kwargs,
+    ) -> ai_conversations.AIRequestResponse:
+        assert kwargs["requester_id"] == 285190493703503872
+        assert kwargs["thread_id"] == 12345
         assert message_history == [
             {
                 "role": "user",
                 "content": [{"type": "text", "text": "what changed?"}],
             }
         ]
-        assert model == gpt.AIModel.OPENAI_GPT_5_4
-        return ai_conversations._GptRequestResponse(
+        assert model == ai.AIModel.OPENAI_GPT_5_4
+        return ai_conversations.AIRequestResponse(
             response_content="nothing notable",
             input_tokens=31,
             output_tokens=7,
@@ -158,7 +173,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
     async def fake_threads_create(
         thread_id: int,
         initiator_user_id: int,
-        model: gpt.AIModel,
+        model: ai.AIModel,
         context_length: int,
     ) -> None:
         created_threads.append((thread_id, initiator_user_id, model, context_length))
@@ -169,6 +184,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
         discord_user_id: int,
         role: str,
         tokens_used: int,
+        content_parts=None,
     ) -> None:
         created_messages.append(
             {
@@ -180,7 +196,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
             }
         )
 
-    monkeypatch.setattr(ai_conversations, "_make_gpt_request", fake_make_gpt_request)
+    monkeypatch.setattr(ai_conversations, "make_ai_request", fake_make_ai_request)
     monkeypatch.setattr(ai_conversations.threads, "create", fake_threads_create)
     monkeypatch.setattr(
         ai_conversations.thread_messages,
@@ -191,6 +207,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
     bot = SimpleNamespace(user=SimpleNamespace(id=999))
     interaction = SimpleNamespace(
         id=12345,
+        channel_id=None,
         user=SimpleNamespace(id=285190493703503872),
     )
 
@@ -198,7 +215,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
         bot,
         interaction,
         "what changed?",
-        gpt.AIModel.OPENAI_GPT_5_4,
+        ai.AIModel.OPENAI_GPT_5_4,
     )
 
     assert result == ai_conversations.SendAndReceiveResponse(
@@ -208,7 +225,7 @@ async def test_send_message_without_context_tracks_query_requester_cost(
         (
             12345,
             285190493703503872,
-            gpt.AIModel.OPENAI_GPT_5_4,
+            ai.AIModel.OPENAI_GPT_5_4,
             0,
         )
     ]

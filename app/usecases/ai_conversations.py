@@ -1,19 +1,21 @@
 import json
+import re
 import traceback
 from hashlib import sha256
-from typing import Any
 from typing import NamedTuple
 
 import discord
 from pydantic import BaseModel
 
+from app import ai
+from app import attachments
 from app import discord_message_utils
 from app import openai_functions
-from app.adapters.openai import gpt
-from app.adapters.openai.gpt import MessageContent
+from app.ai import MessageContent
 from app.errors import Error
 from app.errors import ErrorCode
 from app.models import DiscordBot
+from app.repositories import ai_requests
 from app.repositories import thread_messages
 from app.repositories import threads
 
@@ -46,7 +48,7 @@ def get_author_name(discord_user_id: int) -> str:
     return f"User #{_get_author_id(discord_user_id)}"
 
 
-class _GptRequestResponse(NamedTuple):
+class AIRequestResponse(NamedTuple):
     response_content: str
     input_tokens: int
     output_tokens: int
@@ -55,21 +57,31 @@ class _GptRequestResponse(NamedTuple):
 MAX_FUNCTION_CALL_ROUNDS = 5
 
 
-async def _make_gpt_request(
-    message_history: list[gpt.Message], model: gpt.AIModel
-) -> _GptRequestResponse | Error:
-    functions = openai_functions.get_full_openai_functions_schema()
-    response_context_items: list[dict[str, Any]] = []
+async def make_ai_request(
+    message_history: list[ai.Message],
+    model: ai.AIModel,
+    *,
+    thread_id: int,
+    requester_id: int,
+    reasoning_effort: str | None = None,
+    web_search: bool = False,
+    functions: list[ai.FunctionSchema] | None = None,
+) -> AIRequestResponse | Error:
+    if functions is None:
+        functions = openai_functions.get_full_openai_functions_schema()
+    tool_rounds: list[ai.ToolRound] = []
     input_tokens = 0
     output_tokens = 0
 
     for _ in range(MAX_FUNCTION_CALL_ROUNDS):
         try:
-            gpt_response = await gpt.send(
+            response = await ai.send(
                 model=model,
                 messages=message_history,
                 functions=functions,
-                response_context_items=response_context_items,
+                tool_rounds=tool_rounds,
+                reasoning_effort=reasoning_effort,
+                web_search=web_search,
             )
         except Exception as exc:
             traceback.print_exc()
@@ -79,43 +91,46 @@ async def _make_gpt_request(
             return Error(
                 code=ErrorCode.UNEXPECTED_ERROR,
                 messages=[
-                    f"Request to OpenAI failed with the following error:\n```\n{exc}```"
+                    f"AI request failed with the following error:\n```\n{exc}```"
                 ],
             )
 
-        input_tokens += gpt_response.input_tokens
-        output_tokens += gpt_response.output_tokens
+        await ai_requests.create(
+            thread_id=thread_id,
+            requester_id=requester_id,
+            model=model.value,
+            usage=response.usage,
+            estimated_cost_usd=response.estimated_cost_usd,
+        )
+        input_tokens += response.input_tokens
+        output_tokens += response.output_tokens
 
-        if not gpt_response.function_calls:
-            assert gpt_response.response_content is not None
-            return _GptRequestResponse(
-                gpt_response.response_content,
+        if not response.function_calls:
+            assert response.response_content is not None
+            return AIRequestResponse(
+                response.response_content,
                 input_tokens,
                 output_tokens,
             )
 
-        response_context_items.extend(gpt_response.response_items)
-        for function_call in gpt_response.function_calls:
-            function_kwargs = json.loads(function_call.arguments)
+        results: list[ai.ToolResult] = []
+        for function_call in response.function_calls:
+            try:
+                function_kwargs = json.loads(function_call.arguments)
+                ai_function = openai_functions.ai_functions[function_call.name]
+                function_response = await ai_function["callback"](**function_kwargs)
+            except Exception:
+                traceback.print_exc()
+                function_response = {
+                    "type": "text",
+                    "text": "The tool failed. Explain that this information is unavailable.",
+                }
+            results.append(ai.ToolResult(call=function_call, content=function_response))
+        tool_rounds.append(ai.ToolRound(response=response, results=results))
 
-            ai_function = openai_functions.ai_functions[function_call.name]
-            function_response = await ai_function["callback"](**function_kwargs)
-
-            if function_call.call_id is None:
-                message_history.append(
-                    {
-                        "role": "function",
-                        "name": function_call.name,
-                        "content": [function_response],
-                    }
-                )
-            else:
-                response_context_items.append(
-                    gpt.function_call_output_item(function_call, function_response)
-                )
-
-    raise NotImplementedError(
-        f"OpenAI function calling exceeded {MAX_FUNCTION_CALL_ROUNDS} rounds"
+    return Error(
+        code=ErrorCode.UNEXPECTED_ERROR,
+        messages=["The model reached the tool-call limit. Try a more focused request."],
     )
 
 
@@ -132,17 +147,14 @@ def _message_content_from_prompt(
 ) -> tuple[str, list[MessageContent]]:
     image_urls: list[str] = []
 
-    # Extract image URLs from the prompt and replace them with {IMAGE}
-    prompt_parts = prompt.split()
-    images_seen = 0
-    for i, part in enumerate(prompt_parts):
-        if (part.startswith("http://") or part.startswith("https://")) and any(
-            part.endswith(ext) for ext in gpt.VALID_IMAGE_EXTENSIONS
-        ):
-            image_urls.append(part)
-            prompt_parts[i] = f"{{IMAGE #{images_seen + 1}}}"
-            images_seen += 1
-    prompt = " ".join(prompt_parts)
+    def replace_image(match: re.Match[str]) -> str:
+        url = match.group()
+        if attachments.extension(url) not in attachments.IMAGE_EXTENSIONS:
+            return url
+        image_urls.append(url)
+        return f"{{IMAGE #{len(image_urls)}}}"
+
+    prompt = re.sub(r"https?://[^\s<>]+", replace_image, prompt)
 
     new_message_content: list[MessageContent] = [
         {
@@ -199,18 +211,30 @@ async def send_message_to_thread(
     async with message.channel.typing():
         thread_history = await thread_messages.fetch_many(thread_id=message.channel.id)
 
-        message_history: list[gpt.Message] = [
+        recent_history = (
+            thread_history[-tracked_thread.context_length :]
+            if tracked_thread.context_length
+            else []
+        )
+        message_history: list[ai.Message] = [
             {
                 "role": m.role,
-                "content": [{"type": "text", "text": m.content}],
+                "content": m.content_parts or [{"type": "text", "text": m.content}],
             }
-            for m in thread_history[-tracked_thread.context_length :]
+            for m in recent_history
         ]
 
         prompt, new_message_content = _message_content_from_prompt(
             prompt,
-            attachment_urls=[attachment.url for attachment in message.attachments],
+            attachment_urls=[],
         )
+
+        try:
+            new_message_content.extend(
+                attachments.content_from_attachments(message.attachments)
+            )
+        except ValueError as exc:
+            return Error(code=ErrorCode.UNEXPECTED_ERROR, messages=[str(exc)])
 
         message_history.append(
             {
@@ -219,17 +243,21 @@ async def send_message_to_thread(
             }
         )
 
-        gpt_response = await _make_gpt_request(
+        response = await make_ai_request(
             message_history,
             tracked_thread.model,
+            thread_id=message.channel.id,
+            requester_id=message.author.id,
+            reasoning_effort=tracked_thread.reasoning_effort,
+            web_search=tracked_thread.web_search,
         )
-        if isinstance(gpt_response, Error):
-            return gpt_response
+        if isinstance(response, Error):
+            return response
 
         # Handle code blocks which may exceed the previous message.
         response_messages: list[str] = (
             discord_message_utils.smart_split_message_into_chunks(
-                gpt_response.response_content,
+                response.response_content,
                 max_length=2000,
             )
         )
@@ -239,15 +267,16 @@ async def send_message_to_thread(
             prompt,
             discord_user_id=message.author.id,
             role="user",
-            tokens_used=gpt_response.input_tokens,
+            tokens_used=response.input_tokens,
+            content_parts=new_message_content,
         )
 
         await thread_messages.create(
             message.channel.id,
-            gpt_response.response_content,
+            response.response_content,
             discord_user_id=bot.user.id,
             role="assistant",
-            tokens_used=gpt_response.output_tokens,
+            tokens_used=response.output_tokens,
         )
 
     return SendAndReceiveResponse(
@@ -259,7 +288,11 @@ async def send_message_without_context(
     bot: DiscordBot,
     interaction: discord.Interaction,
     message_content: str,
-    model: gpt.AIModel,
+    model: ai.AIModel,
+    *,
+    reasoning_effort: str | None = None,
+    web_search: bool = False,
+    attachment: discord.Attachment | None = None,
 ) -> SendAndReceiveResponse | Error:
     if bot.user is None:
         return Error(
@@ -282,22 +315,30 @@ async def send_message_without_context(
     # Since there is no context nor multi-user convos, we can just send the message as is
     prompt = message_content
 
-    user_messages: list[MessageContent] = [
-        {
-            "type": "text",
-            "text": prompt,
-        }
-    ]
-    message_context: list[gpt.Message] = [
+    prompt, user_messages = _message_content_from_prompt(prompt, [])
+    try:
+        user_messages.extend(
+            attachments.content_from_attachments([attachment] if attachment else [])
+        )
+    except ValueError as exc:
+        return Error(code=ErrorCode.UNEXPECTED_ERROR, messages=[str(exc)])
+    message_context: list[ai.Message] = [
         {
             "role": "user",
             "content": user_messages,
         }
     ]
 
-    gpt_response = await _make_gpt_request(message_context, model)
-    if isinstance(gpt_response, Error):
-        return gpt_response
+    response = await make_ai_request(
+        message_context,
+        model,
+        thread_id=interaction.channel_id or interaction.id,
+        requester_id=interaction.user.id,
+        reasoning_effort=reasoning_effort,
+        web_search=web_search,
+    )
+    if isinstance(response, Error):
+        return response
 
     await threads.create(
         interaction.id,
@@ -311,20 +352,21 @@ async def send_message_without_context(
         prompt,
         discord_user_id=interaction.user.id,
         role="user",
-        tokens_used=gpt_response.input_tokens,
+        tokens_used=response.input_tokens,
+        content_parts=user_messages,
     )
 
     await thread_messages.create(
         interaction.id,
-        gpt_response.response_content,
+        response.response_content,
         discord_user_id=bot.user.id,
         role="assistant",
-        tokens_used=gpt_response.output_tokens,
+        tokens_used=response.output_tokens,
     )
 
     response_messages: list[str] = (
         discord_message_utils.smart_split_message_into_chunks(
-            gpt_response.response_content,
+            response.response_content,
             max_length=2000,
         )
     )

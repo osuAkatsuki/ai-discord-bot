@@ -1,104 +1,42 @@
+import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
-from typing import Literal
-from typing import Required
-from typing import TypeAlias
-from typing import TypedDict
+from urllib.parse import quote
 
 import openai
 
+from app import openai_pricing
 from app import settings
-
-VALID_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".gif"}
+from app.ai import AIModel
+from app.ai import AIResponse
+from app.ai import FunctionCall
+from app.ai import FunctionSchema
+from app.ai import Message
+from app.ai import MessageContent
+from app.ai import SELECTABLE_MODELS
+from app.ai import ToolRound
 
 openai_client = openai.AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
 )
-deepseek_client = openai.AsyncOpenAI(
-    api_key=settings.DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com/v1",
-)
 
 
-class AIModel(StrEnum):
-    # OpenAI
-    OPENAI_GPT_5_5 = "gpt-5.5"
-    OPENAI_GPT_5_4 = "gpt-5.4"
-    OPENAI_GPT_5_4_MINI = "gpt-5.4-mini"
-    OPENAI_GPT_5_4_NANO = "gpt-5.4-nano"
-    OPENAI_GPT_5 = "gpt-5"
-    OPENAI_GPT_5_MINI = "gpt-5-mini"
-    OPENAI_GPT_4_OMNI = "gpt-4o"
-    OPENAI_GPT_O3 = "o3"
-    OPENAI_GPT_O3_PRO = "o3-pro"
-    OPENAI_GPT_O4_MINI = "o4-mini"
-
-    # DeepSeek
-    DEEPSEEK_CHAT = "deepseek-chat"
-    DEEPSEEK_REASONER = "deepseek-reasoner"
-
-
-DEFAULT_AI_MODEL = AIModel.OPENAI_GPT_5_4
-
-
-class TextMessage(TypedDict):
-    type: Literal["text"]
-    text: str
-
-
-class ImageUrl(TypedDict):
-    url: str
-
-
-class ImageUrlMessage(TypedDict):
-    type: Literal["image_url"]
-    image_url: ImageUrl
-
-
-MessageContent: TypeAlias = TextMessage | ImageUrlMessage
-
-
-class Message(TypedDict, total=False):
-    role: Required[Literal["user", "assistant", "function"]]
-    content: Required[list[MessageContent]]
-    name: str  # only exists when role is "function"
-    call_id: str  # only exists for Responses API function outputs
-
-
-class Property(TypedDict, total=False):
-    type: Required[str]
-    enum: list[str]  # optional
-    description: Required[str]
-
-
-class Parameters(TypedDict):
-    type: str
-    properties: dict[str, Property]
-    required: list[str]
-
-
-class FunctionSchema(TypedDict):
-    name: str
-    description: str
-    parameters: Parameters
-
-
-@dataclass(frozen=True, slots=True)
-class FunctionCall:
-    name: str
-    arguments: str
-    call_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AIResponse:
-    response_content: str | None
-    function_calls: list[FunctionCall]
-    input_tokens: int
-    output_tokens: int
-    response_items: list[dict[str, Any]]
+def validate_options(
+    model: AIModel, reasoning_effort: str | None, web_search: bool
+) -> None:
+    if model in {AIModel.DEEPSEEK_CHAT, AIModel.DEEPSEEK_REASONER}:
+        raise ValueError(
+            "DeepSeek support has ended. Use /model to select an OpenAI model."
+        )
+    if reasoning_effort is not None:
+        if model not in SELECTABLE_MODELS:
+            raise ValueError("Select a current model to configure reasoning effort.")
+        if reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
+            raise ValueError("Unsupported reasoning effort.")
+        if reasoning_effort == "none" and model != AIModel.OPENAI_GPT_6_LUNA:
+            raise ValueError("Only GPT-6 Luna supports reasoning effort 'none'.")
+    if web_search and model not in SELECTABLE_MODELS:
+        raise ValueError("Select a current model to enable web search.")
 
 
 def _message_content_to_text(content: Sequence[MessageContent]) -> str:
@@ -108,18 +46,13 @@ def _message_content_to_text(content: Sequence[MessageContent]) -> str:
             output_parts.append(content_part["text"])
         elif content_part["type"] == "image_url":
             output_parts.append(content_part["image_url"]["url"])
+        elif content_part["type"] == "file":
+            output_parts.append(content_part["file_url"])
     return "\n".join(output_parts)
 
 
 def _message_to_responses_input(message: Message) -> dict[str, Any]:
     role = message["role"]
-    if role == "function":
-        return {
-            "type": "function_call_output",
-            "call_id": message["call_id"],
-            "output": _message_content_to_text(message["content"]),
-        }
-
     if role == "assistant":
         return {
             "role": "assistant",
@@ -144,6 +77,9 @@ def _message_to_responses_input(message: Message) -> dict[str, Any]:
                 }
             )
 
+        elif content_part["type"] == "file":
+            content.append({"type": "input_file", "file_url": content_part["file_url"]})
+
     return {
         "role": role,
         "content": content,
@@ -160,49 +96,66 @@ def _function_schema_to_responses_tool(schema: FunctionSchema) -> dict[str, Any]
     }
 
 
-def _normalize_responses_response(response: Any) -> AIResponse:
+def _normalize_responses_response(response: Any, model: AIModel) -> AIResponse:
     usage = response.usage
     response_items = [item.model_dump(exclude_none=True) for item in response.output]
     function_calls = [
         FunctionCall(
-            name=item.name,
-            arguments=item.arguments,
-            call_id=item.call_id,
+            name=item["name"], arguments=item["arguments"], call_id=item["call_id"]
         )
-        for item in response.output
-        if item.type == "function_call"
+        for item in response_items
+        if item["type"] == "function_call"
     ]
-
+    text_parts: list[str] = []
+    sources: dict[str, int] = {}
+    for item in response_items:
+        if item["type"] != "message":
+            continue
+        for part in item.get("content", []):
+            if part["type"] == "refusal":
+                text_parts.append(part["refusal"])
+            elif part["type"] == "output_text":
+                text = part["text"]
+                citations = [
+                    a
+                    for a in part.get("annotations", [])
+                    if a["type"] == "url_citation"
+                ]
+                for annotation in citations:
+                    sources.setdefault(annotation["url"], len(sources) + 1)
+                for annotation in sorted(
+                    citations, key=lambda a: a["end_index"], reverse=True
+                ):
+                    url = quote(annotation["url"], safe=":/?#[]@!$&'+,;=%")
+                    label = sources[annotation["url"]]
+                    text = (
+                        text[: annotation["end_index"]]
+                        + f" [{label}](<{url}>)"
+                        + text[annotation["end_index"] :]
+                    )
+                text_parts.append(re.sub(r"cite.*?", "", text))
+    content = "\n".join(text_parts) or response.output_text or ""
+    if response.status == "incomplete":
+        content += "\n\n[Response incomplete; try a shorter request or lower reasoning effort.]"
+    if not content and not function_calls:
+        content = "The model returned no text. Try again or choose a different model."
+    usage_data = usage.model_dump() if usage is not None else None
+    web_search_calls = sum(
+        item["type"] == "web_search_call" and item["action"]["type"] == "search"
+        for item in response_items
+    )
+    if usage_data is not None:
+        usage_data["web_search_calls"] = web_search_calls
     return AIResponse(
-        response_content=response.output_text or None,
+        response_content=content or None,
         function_calls=function_calls,
         input_tokens=usage.input_tokens if usage is not None else 0,
         output_tokens=usage.output_tokens if usage is not None else 0,
-        response_items=response_items,
-    )
-
-
-def _normalize_chat_response(response: Any) -> AIResponse:
-    choice = response.choices[0]
-    message = choice.message
-    function_call = message.function_call
-    function_calls = []
-    if choice.finish_reason == "function_call" and function_call is not None:
-        function_calls.append(
-            FunctionCall(
-                name=function_call.name,
-                arguments=function_call.arguments,
-            )
-        )
-
-    usage = response.usage
-
-    return AIResponse(
-        response_content=message.content,
-        function_calls=function_calls,
-        input_tokens=usage.prompt_tokens if usage is not None else 0,
-        output_tokens=usage.completion_tokens if usage is not None else 0,
-        response_items=[],
+        provider_state=response_items,
+        usage=usage_data,
+        estimated_cost_usd=openai_pricing.response_cost(
+            model, usage_data, web_search_calls
+        ),
     )
 
 
@@ -210,9 +163,6 @@ def function_call_output_item(
     function_call: FunctionCall,
     function_response: MessageContent,
 ) -> dict[str, Any]:
-    if function_call.call_id is None:
-        raise ValueError("OpenAI Responses function calls must include a call_id")
-
     return {
         "type": "function_call_output",
         "call_id": function_call.call_id,
@@ -225,34 +175,36 @@ async def send(
     model: AIModel,
     messages: Sequence[Message],
     functions: Sequence[FunctionSchema] | None = None,
-    response_context_items: Sequence[dict[str, Any]] | None = None,
+    tool_rounds: Sequence[ToolRound] | None = None,
+    reasoning_effort: str | None = None,
+    web_search: bool = False,
 ) -> AIResponse:
-    """\
-    Send a message to the selected AI provider, as a given model.
-
-    OpenAI models use the Responses API. DeepSeek uses its OpenAI-compatible
-    chat completions endpoint.
-    """
-    if model in {AIModel.DEEPSEEK_CHAT, AIModel.DEEPSEEK_REASONER}:
-        kwargs: dict[str, Any] = {"model": model.value, "messages": messages}
-        if functions is not None:
-            kwargs["functions"] = functions
-        return _normalize_chat_response(
-            await deepseek_client.chat.completions.create(**kwargs)
-        )
-
+    """Send text, image, or file inputs using the OpenAI Responses API."""
+    validate_options(model, reasoning_effort, web_search)
     input_items = [_message_to_responses_input(message) for message in messages]
-    if response_context_items is not None:
-        input_items.extend(response_context_items)
-
-    kwargs = {
+    for tool_round in tool_rounds or []:
+        input_items.extend(tool_round.response.provider_state)
+        input_items.extend(
+            function_call_output_item(result.call, result.content)
+            for result in tool_round.results
+        )
+    kwargs: dict[str, Any] = {
         "model": model.value,
         "input": input_items,
         "store": False,
+        "service_tier": "default",
+        "include": ["reasoning.encrypted_content"],
     }
-    if functions is not None:
-        kwargs["tools"] = [
-            _function_schema_to_responses_tool(function) for function in functions
-        ]
-
-    return _normalize_responses_response(await openai_client.responses.create(**kwargs))
+    if model in SELECTABLE_MODELS:
+        kwargs["reasoning"] = {"effort": reasoning_effort or "low"}
+    tools = [
+        _function_schema_to_responses_tool(function) for function in functions or []
+    ]
+    if web_search:
+        tools.append({"type": "web_search"})
+        kwargs["max_tool_calls"] = 5
+    if tools:
+        kwargs["tools"] = tools
+    return _normalize_responses_response(
+        await openai_client.responses.create(**kwargs), model
+    )
