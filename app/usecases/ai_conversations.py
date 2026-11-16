@@ -2,6 +2,7 @@ import json
 import re
 import traceback
 from hashlib import sha256
+from pathlib import PurePosixPath
 from typing import NamedTuple
 
 import discord
@@ -18,6 +19,7 @@ from app.models import DiscordBot
 from app.repositories import ai_requests
 from app.repositories import thread_messages
 from app.repositories import threads
+from app.usecases import cloud_execution
 
 DISCORD_USER_ID_WHITELIST: set[int] = {
     # Akatsuki
@@ -52,6 +54,7 @@ class AIRequestResponse(NamedTuple):
     response_content: str
     input_tokens: int
     output_tokens: int
+    files: tuple[ai.ExecutionFile, ...] = ()
 
 
 MAX_FUNCTION_CALL_ROUNDS = 5
@@ -66,12 +69,14 @@ async def make_ai_request(
     reasoning_effort: str | None = None,
     web_search: bool = False,
     functions: list[ai.FunctionSchema] | None = None,
+    execution_session_id: str | None = None,
 ) -> AIRequestResponse | Error:
     if functions is None:
         functions = openai_functions.get_full_openai_functions_schema()
     tool_rounds: list[ai.ToolRound] = []
     input_tokens = 0
     output_tokens = 0
+    files: dict[str, ai.ExecutionFile] = {}
 
     for _ in range(MAX_FUNCTION_CALL_ROUNDS):
         try:
@@ -82,6 +87,7 @@ async def make_ai_request(
                 tool_rounds=tool_rounds,
                 reasoning_effort=reasoning_effort,
                 web_search=web_search,
+                execution_session_id=execution_session_id,
             )
         except Exception as exc:
             traceback.print_exc()
@@ -104,6 +110,7 @@ async def make_ai_request(
         )
         input_tokens += response.input_tokens
         output_tokens += response.output_tokens
+        files.update((file.id, file) for file in response.files)
 
         if not response.function_calls:
             assert response.response_content is not None
@@ -111,6 +118,7 @@ async def make_ai_request(
                 response.response_content,
                 input_tokens,
                 output_tokens,
+                tuple(files.values()),
             )
 
         results: list[ai.ToolResult] = []
@@ -170,6 +178,7 @@ def _message_content_from_prompt(
 
 class SendAndReceiveResponse(BaseModel):
     response_messages: list[str]
+    files: tuple[ai.ExecutionFile, ...] = ()
 
 
 async def send_message_to_thread(
@@ -194,6 +203,14 @@ async def send_message_to_thread(
             messages=["User is not authorized to use this bot"],
         )
 
+    async with cloud_execution.thread_lock(message.channel.id):
+        return await _send_message_to_thread(bot, message)
+
+
+async def _send_message_to_thread(
+    bot: DiscordBot, message: discord.Message
+) -> SendAndReceiveResponse | Error:
+    assert bot.user is not None
     tracked_thread = await threads.fetch_one(message.channel.id)
     if tracked_thread is None:
         return Error(
@@ -229,12 +246,60 @@ async def send_message_to_thread(
             attachment_urls=[],
         )
 
+        session = None
+        notice = None
         try:
-            new_message_content.extend(
-                attachments.content_from_attachments(message.attachments)
-            )
+            if tracked_thread.cloud_execution:
+                # Raw bytes are uploaded to the remote workspace, never executed here.
+                if sum(
+                    a.size for a in message.attachments
+                ) >= attachments.MAX_REQUEST_FILE_BYTES or any(
+                    a.size > attachments.MAX_ATTACHMENT_BYTES
+                    for a in message.attachments
+                ):
+                    raise ValueError(
+                        "Use files up to 20 MiB each, totaling less than 50 MiB."
+                    )
+                session, notice = await cloud_execution.prepare_session(
+                    tracked_thread, message.author.id
+                )
+                if notice:
+                    await message.channel.send(notice)
+                    new_message_content.append({"type": "text", "text": notice})
+                for attachment in message.attachments:
+                    filename = (
+                        f"{attachment.id}_{PurePosixPath(attachment.filename).name}"
+                    )
+                    path = await ai.upload_execution_file(
+                        session.id, filename, await attachment.read()
+                    )
+                    new_message_content.append(
+                        {
+                            "type": "text",
+                            "text": f"Uploaded file in the cloud workspace: {path}",
+                        }
+                    )
+                    if (
+                        attachments.extension(attachment.filename)
+                        in attachments.IMAGE_EXTENSIONS
+                    ):
+                        new_message_content.append(
+                            _image_url_message_content(attachment.url)
+                        )
+            else:
+                new_message_content.extend(
+                    attachments.content_from_attachments(message.attachments)
+                )
         except ValueError as exc:
             return Error(code=ErrorCode.UNEXPECTED_ERROR, messages=[str(exc)])
+        except Exception:
+            traceback.print_exc()
+            return Error(
+                code=ErrorCode.UNEXPECTED_ERROR,
+                messages=[
+                    "Could not prepare the attachments or cloud workspace. Check file sizes, model access, and the configured network allowlist."
+                ],
+            )
 
         message_history.append(
             {
@@ -243,14 +308,22 @@ async def send_message_to_thread(
             }
         )
 
-        response = await make_ai_request(
-            message_history,
-            tracked_thread.model,
-            thread_id=message.channel.id,
-            requester_id=message.author.id,
-            reasoning_effort=tracked_thread.reasoning_effort,
-            web_search=tracked_thread.web_search,
-        )
+        try:
+            response = await make_ai_request(
+                message_history,
+                tracked_thread.model,
+                thread_id=message.channel.id,
+                requester_id=message.author.id,
+                reasoning_effort=tracked_thread.reasoning_effort,
+                web_search=tracked_thread.web_search,
+                execution_session_id=session.id if session else None,
+            )
+        finally:
+            # Even an unsuccessful model call can consume a container session.
+            if session:
+                await cloud_execution.record_cost(
+                    tracked_thread.thread_id, message.author.id, session
+                )
         if isinstance(response, Error):
             return response
 
@@ -281,6 +354,7 @@ async def send_message_to_thread(
 
     return SendAndReceiveResponse(
         response_messages=response_messages,
+        files=response.files,
     )
 
 

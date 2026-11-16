@@ -424,6 +424,7 @@ async def test_thread_history_preserves_files_and_honors_zero_context(
                 context_length=context_length,
                 reasoning_effort="high",
                 web_search=True,
+                cloud_execution=False,
             )
         ),
     )

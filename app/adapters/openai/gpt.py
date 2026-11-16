@@ -9,6 +9,7 @@ from app import openai_pricing
 from app import settings
 from app.ai import AIModel
 from app.ai import AIResponse
+from app.ai import ExecutionFile
 from app.ai import FunctionCall
 from app.ai import FunctionSchema
 from app.ai import Message
@@ -96,7 +97,9 @@ def _function_schema_to_responses_tool(schema: FunctionSchema) -> dict[str, Any]
     }
 
 
-def _normalize_responses_response(response: Any, model: AIModel) -> AIResponse:
+def _normalize_responses_response(
+    response: Any, model: AIModel, execution_session_id: str | None = None
+) -> AIResponse:
     usage = response.usage
     response_items = [item.model_dump(exclude_none=True) for item in response.output]
     function_calls = [
@@ -108,6 +111,7 @@ def _normalize_responses_response(response: Any, model: AIModel) -> AIResponse:
     ]
     text_parts: list[str] = []
     sources: dict[str, int] = {}
+    files: dict[str, ExecutionFile] = {}
     for item in response_items:
         if item["type"] != "message":
             continue
@@ -133,6 +137,19 @@ def _normalize_responses_response(response: Any, model: AIModel) -> AIResponse:
                         + f" [{label}](<{url}>)"
                         + text[annotation["end_index"] :]
                     )
+                for annotation in part.get("annotations", []):
+                    if (
+                        annotation["type"] == "container_file_citation"
+                        and annotation["container_id"] == execution_session_id
+                    ):
+                        files[annotation["file_id"]] = ExecutionFile(
+                            execution_session_id,
+                            annotation["file_id"],
+                            annotation["filename"],
+                        )
+                # Discord cannot open sandbox links; the files are sent as attachments.
+                if execution_session_id:
+                    text = re.sub(r"\[([^\]]+)\]\(sandbox:[^)]+\)", r"\1", text)
                 text_parts.append(re.sub(r"cite.*?", "", text))
     content = "\n".join(text_parts) or response.output_text or ""
     if response.status == "incomplete":
@@ -152,6 +169,7 @@ def _normalize_responses_response(response: Any, model: AIModel) -> AIResponse:
         input_tokens=usage.input_tokens if usage is not None else 0,
         output_tokens=usage.output_tokens if usage is not None else 0,
         provider_state=response_items,
+        files=tuple(files.values()),
         usage=usage_data,
         estimated_cost_usd=openai_pricing.response_cost(
             model, usage_data, web_search_calls
@@ -178,6 +196,7 @@ async def send(
     tool_rounds: Sequence[ToolRound] | None = None,
     reasoning_effort: str | None = None,
     web_search: bool = False,
+    execution_session_id: str | None = None,
 ) -> AIResponse:
     """Send text, image, or file inputs using the OpenAI Responses API."""
     validate_options(model, reasoning_effort, web_search)
@@ -203,8 +222,36 @@ async def send(
     if web_search:
         tools.append({"type": "web_search"})
         kwargs["max_tool_calls"] = 5
+    if execution_session_id:
+        from app.adapters.openai.execution import validate_model
+
+        validate_model(model)
+        tools.append(
+            {
+                "type": "shell",
+                "environment": {
+                    "type": "container_reference",
+                    "container_id": execution_session_id,
+                },
+            }
+        )
+        kwargs["max_tool_calls"] = 5
+        kwargs["instructions"] = (
+            "A cloud workspace is available for this Discord thread. "
+            "Execute commands only with the hosted shell tool. "
+            "Files persist while the workspace is active; inspect the filesystem "
+            "rather than assuming prior commands or files still exist. "
+            "Save downloadable outputs under /mnt/data and link each output "
+            "using [filename](sandbox:/mnt/data/filename)."
+        )
     if tools:
         kwargs["tools"] = tools
+    # Retrying a hosted-shell response can run commands a second time.
+    client = (
+        openai_client.with_options(max_retries=0)
+        if execution_session_id
+        else openai_client
+    )
     return _normalize_responses_response(
-        await openai_client.responses.create(**kwargs), model
+        await client.responses.create(**kwargs), model, execution_session_id
     )

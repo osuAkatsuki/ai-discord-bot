@@ -89,6 +89,7 @@ async def test_make_ai_request_continues_responses_function_call(
         tool_rounds: list[ai.ToolRound],
         reasoning_effort: str | None,
         web_search: bool,
+        execution_session_id: str | None,
     ) -> ai.AIResponse:
         captured_rounds.append(list(tool_rounds))
         return responses.pop(0)

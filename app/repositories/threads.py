@@ -14,6 +14,8 @@ READ_PARAMS = """\
     context_length,
     reasoning_effort,
     web_search,
+    cloud_execution,
+    execution_session_id,
     created_at
 """
 
@@ -25,6 +27,8 @@ class Thread(BaseModel):
     context_length: int
     reasoning_effort: str | None = None
     web_search: bool = False
+    cloud_execution: bool = False
+    execution_session_id: str | None = None
     created_at: datetime
 
 
@@ -37,6 +41,8 @@ def deserialize(rec: Mapping[str, Any]) -> Thread:
         created_at=rec["created_at"],
         reasoning_effort=rec["reasoning_effort"],
         web_search=rec["web_search"],
+        cloud_execution=rec["cloud_execution"],
+        execution_session_id=rec["execution_session_id"],
     )
 
 
@@ -47,10 +53,11 @@ async def create(
     context_length: int,
     reasoning_effort: str | None = None,
     web_search: bool = False,
+    cloud_execution: bool = False,
 ) -> Thread:
     query = f"""\
-        INSERT INTO threads (thread_id, initiator_user_id, model, context_length, reasoning_effort, web_search)
-        VALUES (:thread_id, :initiator_user_id, :model, :context_length, :reasoning_effort, :web_search)
+        INSERT INTO threads (thread_id, initiator_user_id, model, context_length, reasoning_effort, web_search, cloud_execution)
+        VALUES (:thread_id, :initiator_user_id, :model, :context_length, :reasoning_effort, :web_search, :cloud_execution)
         RETURNING {READ_PARAMS}
     """
     values: dict[str, Any] = {
@@ -60,6 +67,7 @@ async def create(
         "context_length": context_length,
         "reasoning_effort": reasoning_effort,
         "web_search": web_search,
+        "cloud_execution": cloud_execution,
     }
     rec = await state.write_database.fetch_one(query, values)
     assert rec is not None
@@ -143,4 +151,22 @@ async def set_model_options(
             "reasoning_effort": reasoning_effort,
             "web_search": web_search,
         },
+    )
+
+
+async def set_cloud_execution(thread_id: int, enabled: bool) -> None:
+    await state.write_database.execute(
+        "UPDATE threads SET cloud_execution = :enabled WHERE thread_id = :thread_id",
+        {"thread_id": thread_id, "enabled": enabled},
+    )
+
+
+async def set_execution_session(thread_id: int, session_id: str | None) -> None:
+    await state.write_database.execute(
+        """
+        UPDATE threads SET execution_session_id = :session_id,
+                           execution_cost_usd = 0
+        WHERE thread_id = :thread_id
+        """,
+        {"thread_id": thread_id, "session_id": session_id},
     )
