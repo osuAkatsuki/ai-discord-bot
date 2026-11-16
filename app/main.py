@@ -32,8 +32,10 @@ LOGGER = logging.getLogger(__name__)
 MAX_CONTENT_LENGTH = 100
 
 
+# No privileged intents: Discord requires review for them once an app reaches 10,000 users.
+# on_message only acts on messages that mention the bot, and those include their content
+# without the message content intent.
 intents = discord.Intents.default()
-intents.message_content = True
 
 allowed_installs = discord.app_commands.AppInstallationType(guild=True, user=True)
 allowed_contexts = discord.app_commands.AppCommandContext(
