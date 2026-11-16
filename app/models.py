@@ -17,7 +17,8 @@ class DiscordBot(discord.Client):
     async def close(self, *args: Any, **kwargs: Any) -> None:
         async def _shutdown() -> None:
             await lifecycle.stop()
-            await super().close(*args, **kwargs)
+            # Zero-argument super() only works directly inside a method, not in a nested function
+            await super(DiscordBot, self).close(*args, **kwargs)
 
         try:
             await asyncio.wait_for(_shutdown(), timeout=SHUTDOWN_TIMEOUT)
